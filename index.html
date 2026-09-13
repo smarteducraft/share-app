@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>학생 웹앱 공유 게시판</title>
+  <title>웹앱 공유 게시판</title>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <style>
     :root{--line:#e2e8f0;--text:#14213d;--muted:#64748b;--brand:#4f46e5}
@@ -23,7 +23,7 @@
 </head>
 <body>
   <div class="shellbar">
-    <div class="title">🚀 학생 웹앱 공유 게시판</div>
+    <div class="title">🚀 웹앱 공유 게시판</div>
     <div class="subtitle">열람은 누구나 · 글 작성은 Google 로그인</div>
     <div class="spacer"></div>
     <div id="topGoogleButton"></div>
@@ -67,25 +67,43 @@
     let boardOrigin = '';
     let verifiedUser = null;
 
-    boardFrame.src = APPS_SCRIPT_WEB_APP_URL;
-    initGoogleWhenReady();
+    // 중요: iframe을 로드하기 전에 메시지 리스너를 먼저 등록합니다.
+    // 초기 READY 메시지를 놓치면 Google 로그인은 성공해도 토큰을 게시판으로 전달하지 못할 수 있습니다.
+    window.addEventListener('message', handleBoardMessage);
 
     document.getElementById('closeLogin').addEventListener('click', closeLoginModal);
     document.getElementById('logoutBtn').addEventListener('click', logoutBoard);
     loginModal.addEventListener('click', e => { if(e.target === loginModal) closeLoginModal(); });
 
-    window.addEventListener('message', event => {
+    boardFrame.addEventListener('load', () => {
+      // 비밀정보가 없는 핸드셰이크 메시지입니다. 자식 프레임이 실제 origin을 다시 알려주게 합니다.
+      try {
+        boardFrame.contentWindow.postMessage({type:'STUDENT_BOARD_PARENT_HELLO'}, '*');
+      } catch(e) {}
+    });
+
+    boardFrame.src = APPS_SCRIPT_WEB_APP_URL;
+    initGoogleWhenReady();
+
+    function handleBoardMessage(event){
       if(event.source !== boardFrame.contentWindow) return;
+
+      // 해당 iframe에서 온 모든 정상 메시지의 origin을 갱신합니다.
+      // 이렇게 하면 초기 READY 메시지를 놓쳤더라도 REQUEST_LOGIN 메시지에서 복구됩니다.
+      if(event.origin && /^https:\/\//i.test(event.origin)){
+        boardOrigin = event.origin;
+      }
+
       const data = event.data || {};
 
-      // iframe 자체가 알려준 실제 origin을 기억한 뒤 이후에는 정확한 origin으로만 토큰을 전달합니다.
       if(data.type === 'STUDENT_BOARD_READY'){
-        boardOrigin = event.origin || '';
         sendStoredTokenToBoard();
         return;
       }
 
       if(data.type === 'STUDENT_BOARD_REQUEST_LOGIN'){
+        // 이 메시지를 받았다는 것은 게시판 iframe과 통신이 된다는 뜻입니다.
+        // 계정 선택 후 즉시 토큰을 전달할 수 있도록 origin을 확보한 상태에서 로그인 창을 엽니다.
         openLoginModal();
         return;
       }
@@ -94,6 +112,7 @@
         verifiedUser = data.user || null;
         renderUser();
         closeLoginModal();
+        showToast('Google 로그인이 완료되었습니다.');
         return;
       }
 
@@ -104,9 +123,11 @@
         if(data.type === 'STUDENT_BOARD_AUTH_EXPIRED'){
           showToast('로그인 시간이 만료되었습니다. 다시 로그인해 주세요.', true);
           openLoginModal();
+        }else{
+          showToast('Google 로그인 확인에 실패했습니다. 아래 점검 사항을 확인해 주세요.', true);
         }
       }
-    });
+    }
 
     function initGoogleWhenReady(attempt=0){
       if(googleInitialized) return;
@@ -124,7 +145,9 @@
         client_id: GOOGLE_CLIENT_ID,
         callback: handleGoogleCredential,
         ux_mode: 'popup',
-        auto_select: false
+        auto_select: false,
+        // Chrome 최신 버전에서 버튼 로그인 흐름을 FedCM으로 처리합니다.
+        use_fedcm_for_button: true
       });
       googleInitialized = true;
       renderGoogleButtons();
@@ -145,10 +168,24 @@
 
     function handleGoogleCredential(response){
       const token = response && response.credential ? response.credential : '';
-      if(!token){ showToast('Google 로그인 정보를 받지 못했습니다.', true); return; }
+      if(!token){
+        showToast('Google 계정 인증은 열렸지만 ID 토큰을 받지 못했습니다.', true);
+        return;
+      }
 
       try{ sessionStorage.setItem(TOKEN_KEY, token); }catch(e){}
-      showToast('Google 로그인 정보를 확인하고 있습니다.');
+      showToast('Google 계정 인증 성공 · 게시판에서 확인 중입니다.');
+
+      if(!boardOrigin){
+        // READY를 놓친 경우 다시 핸드셰이크를 요청한 뒤 잠시 후 재전송합니다.
+        try{ boardFrame.contentWindow.postMessage({type:'STUDENT_BOARD_PARENT_HELLO'}, '*'); }catch(e){}
+        setTimeout(() => {
+          if(boardOrigin) sendTokenToBoard(token);
+          else showToast('게시판 연결 정보를 받지 못했습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.', true);
+        }, 500);
+        return;
+      }
+
       sendTokenToBoard(token);
     }
 
