@@ -33,7 +33,7 @@
     </div>
   </div>
 
-  <iframe id="boardFrame" title="학생 웹앱 공유 게시판" referrerpolicy="no-referrer"></iframe>
+  <iframe id="boardFrame" title="웹앱 공유 게시판" referrerpolicy="no-referrer"></iframe>
 
   <div class="modalBack" id="loginModal">
     <div class="modal">
@@ -55,7 +55,8 @@
     const GOOGLE_CLIENT_ID = '1071416155552-3odg2uqlv547elnbp93s3fc8tkqc4l9q.apps.googleusercontent.com';
     const APPS_SCRIPT_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzEXmaSxS74Zfcx9wbb2MGI8CSkS_TNBxWN1KAYeIBw0L4y1k2xM5t_ygZDqsQNnRsy/exec';
 
-    const TOKEN_KEY = 'studentWebappBoardGoogleIdToken';
+    const TOKEN_KEY = 'webappBoardGoogleIdToken';
+    const LEGACY_TOKEN_KEY = 'studentWebappBoardGoogleIdToken';
     const boardFrame = document.getElementById('boardFrame');
     const loginModal = document.getElementById('loginModal');
     const userBox = document.getElementById('userBox');
@@ -65,10 +66,11 @@
 
     let googleInitialized = false;
     let boardOrigin = '';
+    let boardBridgeWindow = null;
+    let bridgeReady = false;
     let verifiedUser = null;
 
-    // 중요: iframe을 로드하기 전에 메시지 리스너를 먼저 등록합니다.
-    // 초기 READY 메시지를 놓치면 Google 로그인은 성공해도 토큰을 게시판으로 전달하지 못할 수 있습니다.
+    // Apps Script 내부 HTML이 window.top(이 GitHub 페이지)으로 직접 보내는 메시지를 먼저 받습니다.
     window.addEventListener('message', handleBoardMessage);
 
     document.getElementById('closeLogin').addEventListener('click', closeLoginModal);
@@ -76,39 +78,61 @@
     loginModal.addEventListener('click', e => { if(e.target === loginModal) closeLoginModal(); });
 
     boardFrame.addEventListener('load', () => {
-      // 비밀정보가 없는 핸드셰이크 메시지입니다. 자식 프레임이 실제 origin을 다시 알려주게 합니다.
-      try {
-        boardFrame.contentWindow.postMessage({type:'STUDENT_BOARD_PARENT_HELLO'}, '*');
-      } catch(e) {}
+      // READY 메시지가 iframe의 load 이벤트보다 먼저 도착할 수도 있으므로
+      // 여기서는 연결 상태를 초기화하지 않고 진단 경고만 예약합니다.
+      setTimeout(() => {
+        if(!bridgeReady){
+          console.warn('[WebAppBoard] Apps Script 인증 브리지 READY를 아직 받지 못했습니다.');
+        }
+      }, 3000);
     });
 
     boardFrame.src = APPS_SCRIPT_WEB_APP_URL;
     initGoogleWhenReady();
 
     function handleBoardMessage(event){
-      if(event.source !== boardFrame.contentWindow) return;
-
-      // 해당 iframe에서 온 모든 정상 메시지의 origin을 갱신합니다.
-      // 이렇게 하면 초기 READY 메시지를 놓쳤더라도 REQUEST_LOGIN 메시지에서 복구됩니다.
-      if(event.origin && /^https:\/\//i.test(event.origin)){
-        boardOrigin = event.origin;
-      }
-
       const data = event.data || {};
+      const type = String(data.type || '');
 
-      if(data.type === 'STUDENT_BOARD_READY'){
-        sendStoredTokenToBoard();
-        return;
+      const allowedTypes = new Set([
+        'STUDENT_BOARD_READY',
+        'STUDENT_BOARD_REQUEST_LOGIN',
+        'STUDENT_BOARD_AUTH_VERIFIED',
+        'STUDENT_BOARD_AUTH_INVALID',
+        'STUDENT_BOARD_AUTH_EXPIRED'
+      ]);
+      if(!allowedTypes.has(type)) return;
+      if(!isTrustedBoardOrigin(event.origin)) return;
+
+      // READY 또는 REQUEST_LOGIN이 먼저 도착하면 실제 Apps Script 내부 HTML의 WindowProxy를 기억합니다.
+      if(type === 'STUDENT_BOARD_READY' || (!bridgeReady && type === 'STUDENT_BOARD_REQUEST_LOGIN')){
+        const wasReady = bridgeReady && event.source === boardBridgeWindow && event.origin === boardOrigin;
+
+        boardBridgeWindow = event.source;
+        boardOrigin = event.origin;
+        bridgeReady = Boolean(boardBridgeWindow && boardOrigin);
+
+        if(bridgeReady && !wasReady){
+          console.info('[WebAppBoard] 인증 브리지 연결:', boardOrigin);
+          sendStoredTokenToBoard();
+        }
+
+        // Apps Script가 보낸 최초 READY에만 ACK를 보냅니다.
+        // acknowledged READY에 다시 ACK를 보내면 메시지가 무한 반복될 수 있으므로 막습니다.
+        if(bridgeReady && type === 'STUDENT_BOARD_READY' && !data.acknowledged){
+          sendToBoard({type:'STUDENT_BOARD_PARENT_HELLO'});
+        }
       }
 
-      if(data.type === 'STUDENT_BOARD_REQUEST_LOGIN'){
-        // 이 메시지를 받았다는 것은 게시판 iframe과 통신이 된다는 뜻입니다.
-        // 계정 선택 후 즉시 토큰을 전달할 수 있도록 origin을 확보한 상태에서 로그인 창을 엽니다.
+      // 브리지가 확정된 이후에는 같은 window/origin에서 온 메시지만 신뢰합니다.
+      if(!bridgeReady || event.source !== boardBridgeWindow || event.origin !== boardOrigin) return;
+
+      if(type === 'STUDENT_BOARD_REQUEST_LOGIN'){
         openLoginModal();
         return;
       }
 
-      if(data.type === 'STUDENT_BOARD_AUTH_VERIFIED'){
+      if(type === 'STUDENT_BOARD_AUTH_VERIFIED'){
         verifiedUser = data.user || null;
         renderUser();
         closeLoginModal();
@@ -116,17 +140,36 @@
         return;
       }
 
-      if(data.type === 'STUDENT_BOARD_AUTH_INVALID' || data.type === 'STUDENT_BOARD_AUTH_EXPIRED'){
+      if(type === 'STUDENT_BOARD_AUTH_INVALID' || type === 'STUDENT_BOARD_AUTH_EXPIRED'){
         clearStoredToken();
         verifiedUser = null;
         renderUser();
-        if(data.type === 'STUDENT_BOARD_AUTH_EXPIRED'){
+        if(type === 'STUDENT_BOARD_AUTH_EXPIRED'){
           showToast('로그인 시간이 만료되었습니다. 다시 로그인해 주세요.', true);
           openLoginModal();
         }else{
-          showToast('Google 로그인 확인에 실패했습니다. 아래 점검 사항을 확인해 주세요.', true);
+          showToast('Google 로그인 확인에 실패했습니다. Apps Script 설정과 배포 상태를 확인해 주세요.', true);
         }
       }
+    }
+
+    function isTrustedBoardOrigin(origin){
+      try{
+        const url = new URL(origin);
+        if(url.protocol !== 'https:') return false;
+        const host = url.hostname.toLowerCase();
+        return host === 'script.google.com' ||
+               host === 'script.googleusercontent.com' ||
+               host.endsWith('.googleusercontent.com');
+      }catch(e){
+        return false;
+      }
+    }
+
+    function sendToBoard(message){
+      if(!bridgeReady || !boardBridgeWindow || !boardOrigin) return false;
+      boardBridgeWindow.postMessage(message, boardOrigin);
+      return true;
     }
 
     function initGoogleWhenReady(attempt=0){
@@ -145,9 +188,7 @@
         client_id: GOOGLE_CLIENT_ID,
         callback: handleGoogleCredential,
         ux_mode: 'popup',
-        auto_select: false,
-        // Chrome 최신 버전에서 버튼 로그인 흐름을 FedCM으로 처리합니다.
-        use_fedcm_for_button: true
+        auto_select: false
       });
       googleInitialized = true;
       renderGoogleButtons();
@@ -173,34 +214,39 @@
         return;
       }
 
-      try{ sessionStorage.setItem(TOKEN_KEY, token); }catch(e){}
+      try{
+        sessionStorage.setItem(TOKEN_KEY, token);
+        sessionStorage.removeItem(LEGACY_TOKEN_KEY);
+      }catch(e){}
       showToast('Google 계정 인증 성공 · 게시판에서 확인 중입니다.');
 
-      if(!boardOrigin){
-        // READY를 놓친 경우 다시 핸드셰이크를 요청한 뒤 잠시 후 재전송합니다.
-        try{ boardFrame.contentWindow.postMessage({type:'STUDENT_BOARD_PARENT_HELLO'}, '*'); }catch(e){}
-        setTimeout(() => {
-          if(boardOrigin) sendTokenToBoard(token);
-          else showToast('게시판 연결 정보를 받지 못했습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.', true);
-        }, 500);
+      if(!bridgeReady){
+        showToast('Google 인증은 성공했지만 게시판 연결이 아직 준비되지 않았습니다. 잠시 후 다시 시도해 주세요.', true);
         return;
       }
 
       sendTokenToBoard(token);
     }
 
+    function getStoredToken(){
+      try{
+        return sessionStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(LEGACY_TOKEN_KEY) || '';
+      }catch(e){
+        return '';
+      }
+    }
+
     function sendStoredTokenToBoard(){
-      let token = '';
-      try{ token = sessionStorage.getItem(TOKEN_KEY) || ''; }catch(e){}
+      const token = getStoredToken();
       if(token) sendTokenToBoard(token);
     }
 
     function sendTokenToBoard(token){
-      if(!boardFrame.contentWindow || !boardOrigin) return;
-      boardFrame.contentWindow.postMessage({
+      if(!token || !bridgeReady) return;
+      sendToBoard({
         type:'STUDENT_BOARD_AUTH_TOKEN',
         idToken:token
-      }, boardOrigin);
+      });
     }
 
     function openLoginModal(){
@@ -215,14 +261,15 @@
       verifiedUser = null;
       renderUser();
       try{ if(window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect(); }catch(e){}
-      if(boardFrame.contentWindow && boardOrigin){
-        boardFrame.contentWindow.postMessage({type:'STUDENT_BOARD_AUTH_LOGOUT'}, boardOrigin);
-      }
+      sendToBoard({type:'STUDENT_BOARD_AUTH_LOGOUT'});
       showToast('게시판에서 로그아웃했습니다.');
     }
 
     function clearStoredToken(){
-      try{ sessionStorage.removeItem(TOKEN_KEY); }catch(e){}
+      try{
+        sessionStorage.removeItem(TOKEN_KEY);
+        sessionStorage.removeItem(LEGACY_TOKEN_KEY);
+      }catch(e){}
     }
 
     function renderUser(){
