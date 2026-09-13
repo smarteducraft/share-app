@@ -6,7 +6,7 @@
   <title>웹앱 공유 게시판</title>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <style>
-    :root{--line:#e2e8f0;--text:#14213d;--muted:#64748b;--brand:#4f46e5}
+    :root{--line:#e2e8f0;--text:#14213d;--muted:#64748b;--brand:#4f46e5;--gas-banner-crop:42px}
     *{box-sizing:border-box}
     html,body{width:100%;height:100%;margin:0;font-family:Inter,Pretendard,'Noto Sans KR',Arial,sans-serif;background:#f6f8fc;color:var(--text)}
     body{display:grid;grid-template-rows:auto 1fr;overflow:hidden}
@@ -15,7 +15,8 @@
     .user{display:none;align-items:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:5px 7px 5px 10px;background:#fff;max-width:320px}.user.show{display:flex}.userText{min-width:0}.userText strong,.userText span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.userText strong{font-size:12px}.userText span{font-size:10px;color:var(--muted)}
     .logout{border:0;background:#eef2ff;color:#3730a3;border-radius:999px;padding:7px 9px;font-weight:800}
     #topGoogleButton{display:flex;align-items:center;min-height:40px}
-    iframe{width:100%;height:100%;border:0;background:#f6f8fc}
+    .boardViewport{position:relative;min-height:0;overflow:hidden;background:#f6f8fc}
+    #boardFrame{position:absolute;left:0;top:calc(-1 * var(--gas-banner-crop));width:100%;height:calc(100% + var(--gas-banner-crop));border:0;background:#f6f8fc}
     .modalBack{position:fixed;inset:0;background:rgba(15,23,42,.48);display:none;align-items:center;justify-content:center;padding:18px;z-index:50}.modalBack.open{display:flex}.modal{width:min(460px,100%);background:#fff;border-radius:18px;box-shadow:0 24px 80px rgba(15,23,42,.25);overflow:hidden}.modalHead{display:flex;align-items:center;padding:18px 20px;border-bottom:1px solid var(--line)}.modalHead h2{margin:0;font-size:18px}.close{margin-left:auto;border:0;background:transparent;font-size:20px;cursor:pointer}.modalBody{padding:22px;display:grid;gap:16px}.modalBody p{margin:0;color:var(--muted);line-height:1.7}.googleSlot{display:flex;justify-content:center;min-height:44px}.notice{font-size:12px;color:#475569;background:#f8fafc;border:1px solid var(--line);padding:11px 12px;border-radius:10px;line-height:1.6}
     .toast{position:fixed;left:50%;bottom:22px;transform:translate(-50%,18px);background:#111827;color:#fff;padding:10px 14px;border-radius:10px;opacity:0;transition:.2s;z-index:70;pointer-events:none}.toast.show{opacity:1;transform:translate(-50%,0)}.toast.error{background:#991b1b}
     @media(max-width:650px){.subtitle{display:none}.title{font-size:14px}.userText span{display:none}.shellbar{padding:8px}.user{max-width:180px}}
@@ -33,7 +34,9 @@
     </div>
   </div>
 
-  <iframe id="boardFrame" title="웹앱 공유 게시판" referrerpolicy="no-referrer"></iframe>
+  <div class="boardViewport">
+    <iframe id="boardFrame" title="웹앱 공유 게시판" referrerpolicy="no-referrer"></iframe>
+  </div>
 
   <div class="modalBack" id="loginModal">
     <div class="modal">
@@ -54,6 +57,13 @@
        ========================================================= */
     const GOOGLE_CLIENT_ID = '1071416155552-3odg2uqlv547elnbp93s3fc8tkqc4l9q.apps.googleusercontent.com';
     const APPS_SCRIPT_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzEXmaSxS74Zfcx9wbb2MGI8CSkS_TNBxWN1KAYeIBw0L4y1k2xM5t_ygZDqsQNnRsy/exec';
+    const PUBLIC_BOARD_URL = 'https://smarteducraft.github.io/share-app/';
+    const CANONICAL_PATH = '/share-app/';
+
+    // 주소창은 항상 GitHub Pages의 대표 주소로 유지합니다.
+    if(location.pathname !== CANONICAL_PATH || location.search || location.hash){
+      history.replaceState(null, document.title, CANONICAL_PATH);
+    }
 
     const TOKEN_KEY = 'webappBoardGoogleIdToken';
     const LEGACY_TOKEN_KEY = 'studentWebappBoardGoogleIdToken';
@@ -87,6 +97,8 @@
       }, 3000);
     });
 
+    // Apps Script가 자동으로 붙이는 상단 42px 안내 배너는 GitHub wrapper에서 시각적으로 잘라냅니다.
+    // 배너 높이가 바뀌면 CSS의 --gas-banner-crop 값만 조정하면 됩니다.
     boardFrame.src = APPS_SCRIPT_WEB_APP_URL;
     initGoogleWhenReady();
 
@@ -99,7 +111,8 @@
         'STUDENT_BOARD_REQUEST_LOGIN',
         'STUDENT_BOARD_AUTH_VERIFIED',
         'STUDENT_BOARD_AUTH_INVALID',
-        'STUDENT_BOARD_AUTH_EXPIRED'
+        'STUDENT_BOARD_AUTH_EXPIRED',
+        'STUDENT_BOARD_RUN_APP'
       ]);
       if(!allowedTypes.has(type)) return;
       if(!isTrustedBoardOrigin(event.origin)) return;
@@ -129,6 +142,12 @@
 
       if(type === 'STUDENT_BOARD_REQUEST_LOGIN'){
         openLoginModal();
+        return;
+      }
+
+      if(type === 'STUDENT_BOARD_RUN_APP'){
+        const appId = String(data.appId || '').trim();
+        if(appId) openAppInBoardFrame(appId);
         return;
       }
 
@@ -170,6 +189,18 @@
       if(!bridgeReady || !boardBridgeWindow || !boardOrigin) return false;
       boardBridgeWindow.postMessage(message, boardOrigin);
       return true;
+    }
+
+    function openAppInBoardFrame(appId){
+      // 앱을 새 탭으로 열지 않고 현재 GitHub 페이지의 iframe 안에서 실행합니다.
+      // 따라서 주소창은 https://smarteducraft.github.io/share-app/ 로 계속 유지됩니다.
+      const runnerUrl = `${APPS_SCRIPT_WEB_APP_URL}?mode=run&id=${encodeURIComponent(appId)}`;
+
+      bridgeReady = false;
+      boardBridgeWindow = null;
+      boardOrigin = '';
+
+      boardFrame.src = runnerUrl;
     }
 
     function initGoogleWhenReady(attempt=0){
