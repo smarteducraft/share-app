@@ -16,7 +16,7 @@
     .title{font-weight:900}.subtitle{font-size:12px;color:var(--muted);margin-left:6px}.spacer{flex:1}
     .user{display:none;align-items:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:5px 7px 5px 10px;background:#fff;max-width:320px}.user.show{display:flex}.userText{min-width:0}.userText strong,.userText span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.userText strong{font-size:12px}.userText span{font-size:10px;color:var(--muted)}
     .logout{border:0;background:#eef2ff;color:#3730a3;border-radius:999px;padding:7px 9px;font-weight:800}
-    .bridgeStatus{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:999px;padding:6px 9px;white-space:nowrap}.bridgeStatus.ok{color:#047857;background:#ecfdf5;border-color:#a7f3d0}.bridgeStatus.bad{color:#991b1b;background:#fff1f2;border-color:#fecaca}
+    .bridgeStatus{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:999px;padding:6px 9px;white-space:nowrap;cursor:pointer;user-select:none}.bridgeStatus.ok{color:#047857;background:#ecfdf5;border-color:#a7f3d0}.bridgeStatus.bad{color:#991b1b;background:#fff1f2;border-color:#fecaca}
     #topGoogleButton{display:flex;align-items:center;min-height:40px}
     .boardViewport{position:relative;min-height:0;overflow:hidden;background:#f6f8fc}
     #boardFrame{position:absolute;inset:0;width:100%;height:100%;border:0;background:#f6f8fc;display:block}
@@ -30,7 +30,7 @@
     <div class="title">🚀 웹앱 공유 게시판</div>
     <div class="subtitle">열람은 누구나 · 글 작성은 Google 로그인</div>
     <div class="spacer"></div>
-    <div class="bridgeStatus" id="bridgeStatus">● 게시판 연결 확인</div>
+    <div class="bridgeStatus" id="bridgeStatus" title="연결이 되지 않으면 클릭해서 다시 연결">● 게시판 연결 확인</div>
     <div id="topGoogleButton"></div>
     <div class="user" id="userBox">
       <div class="userText"><strong id="userName">Google 사용자</strong><span id="userEmail"></span></div>
@@ -85,12 +85,15 @@
     let bridgeReady = false;
     let verifiedUser = null;
     let bridgeWatchTimer = null;
+    let bridgeReloadAttempts = 0;
+    const BRIDGE_VERSION = '20260916-b2';
 
     // Apps Script 내부 HTML이 window.top(이 GitHub 페이지)으로 직접 보내는 메시지를 먼저 받습니다.
     window.addEventListener('message', handleBoardMessage);
 
     document.getElementById('closeLogin').addEventListener('click', closeLoginModal);
     document.getElementById('logoutBtn').addEventListener('click', logoutBoard);
+    bridgeStatus.addEventListener('click', reconnectBoard);
     loginModal.addEventListener('click', e => { if(e.target === loginModal) closeLoginModal(); });
 
     boardFrame.addEventListener('load', () => {
@@ -101,7 +104,7 @@
 
     // GitHub wrapper 안의 iframe은 잘라내지 않습니다.
     // 기존 42px 강제 크롭이 Apps Script 본문 상단까지 가려 화면이 잘리는 원인이었습니다.
-    boardFrame.src = APPS_SCRIPT_WEB_APP_URL;
+    loadBoardFrame(true);
     setBridgeStatus('checking');
     startBridgeWatch();
     initGoogleWhenReady();
@@ -119,7 +122,10 @@
         'STUDENT_BOARD_RUN_APP'
       ]);
       if(!allowedTypes.has(type)) return;
-      if(!isTrustedBoardOrigin(event.origin)) return;
+      if(!isTrustedBoardOrigin(event.origin)){
+        console.warn('[WebAppBoard] 신뢰되지 않은 origin에서 온 브리지 메시지를 무시했습니다:', event.origin, type);
+        return;
+      }
 
       // READY 또는 REQUEST_LOGIN이 먼저 도착하면 실제 Apps Script 내부 HTML의 WindowProxy를 기억합니다.
       if(type === 'STUDENT_BOARD_READY' || (!bridgeReady && type === 'STUDENT_BOARD_REQUEST_LOGIN')){
@@ -130,6 +136,7 @@
         bridgeReady = Boolean(boardBridgeWindow && boardOrigin);
 
         if(bridgeReady){
+          bridgeReloadAttempts = 0;
           setBridgeStatus('ok');
           if(bridgeWatchTimer){ clearTimeout(bridgeWatchTimer); bridgeWatchTimer = null; }
         }
@@ -195,11 +202,38 @@
       }
     }
 
+    function buildBoardUrl(forceFresh=false){
+      if(!forceFresh) return APPS_SCRIPT_WEB_APP_URL;
+      const joiner = APPS_SCRIPT_WEB_APP_URL.includes('?') ? '&' : '?';
+      return `${APPS_SCRIPT_WEB_APP_URL}${joiner}bridge=${encodeURIComponent(BRIDGE_VERSION)}-${Date.now()}`;
+    }
+
+    function loadBoardFrame(forceFresh=false){
+      bridgeReady = false;
+      boardBridgeWindow = null;
+      boardOrigin = '';
+      boardFrame.src = buildBoardUrl(forceFresh);
+    }
+
     function pokeBoardFrame(){
-      // 비밀정보가 없는 HELLO만 보냅니다. ID 토큰은 bridgeReady가 확인된 뒤에만 전송합니다.
+      // 비밀정보가 없는 HELLO만 보냅니다. 실제 Apps Script HTML이 직접 받는 경우와
+      // Google의 중간 iframe이 있는 경우를 모두 고려해 계속 시도합니다.
       try{
         if(boardFrame.contentWindow){
-          boardFrame.contentWindow.postMessage({type:'STUDENT_BOARD_PARENT_HELLO'}, '*');
+          boardFrame.contentWindow.postMessage({
+            type:'STUDENT_BOARD_PARENT_HELLO',
+            bridgeVersion:BRIDGE_VERSION
+          }, '*');
+        }
+      }catch(e){}
+
+      // READY로 실제 내부 WindowProxy를 이미 알게 된 경우에는 그 창에도 직접 보냅니다.
+      try{
+        if(boardBridgeWindow && boardOrigin){
+          boardBridgeWindow.postMessage({
+            type:'STUDENT_BOARD_PARENT_HELLO',
+            bridgeVersion:BRIDGE_VERSION
+          }, boardOrigin);
         }
       }catch(e){}
     }
@@ -209,17 +243,36 @@
       if(bridgeWatchTimer) clearTimeout(bridgeWatchTimer);
 
       pokeBoardFrame();
-      const delays = [400, 900, 1800, 3200, 5000];
+      const delays = [350, 700, 1200, 2000, 3200, 4800, 6500];
 
       if(attempt >= delays.length){
+        // 캐시나 이전 Apps Script HTML이 남아 있는 경우를 대비해 한 번만 강제 재로드합니다.
+        if(bridgeReloadAttempts < 1){
+          bridgeReloadAttempts += 1;
+          console.warn('[WebAppBoard] READY 미수신 → Apps Script iframe을 새 주소로 1회 다시 불러옵니다.');
+          setBridgeStatus('checking');
+          loadBoardFrame(true);
+          bridgeWatchTimer = setTimeout(() => startBridgeWatch(0), 900);
+          return;
+        }
+
         setBridgeStatus('bad');
-        console.warn('[WebAppBoard] Apps Script 인증 브리지 READY를 받지 못했습니다. Apps Script parentOrigin/배포 버전을 확인하세요.');
+        console.warn('[WebAppBoard] Apps Script 인증 브리지 READY를 받지 못했습니다. 배포가 최신인지, 웹앱 접근 권한이 누구나인지 확인하세요.');
         return;
       }
 
       bridgeWatchTimer = setTimeout(() => {
         if(!bridgeReady) startBridgeWatch(attempt + 1);
       }, delays[attempt]);
+    }
+
+    function reconnectBoard(){
+      if(document.body.classList.contains('runner-mode')) return;
+      bridgeReloadAttempts = 0;
+      setBridgeStatus('checking');
+      showToast('게시판 연결을 다시 확인합니다.');
+      loadBoardFrame(true);
+      setTimeout(() => startBridgeWatch(0), 700);
     }
 
     function isTrustedBoardOrigin(origin){
