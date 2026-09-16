@@ -86,7 +86,8 @@
     let verifiedUser = null;
     let bridgeWatchTimer = null;
     let bridgeReloadAttempts = 0;
-    const BRIDGE_VERSION = '20260916-b2';
+    const BRIDGE_VERSION = '20260916-v3';
+    let bridgeNonce = '';
 
     // Apps Script 내부 HTML이 window.top(이 GitHub 페이지)으로 직접 보내는 메시지를 먼저 받습니다.
     window.addEventListener('message', handleBoardMessage);
@@ -122,18 +123,24 @@
         'STUDENT_BOARD_RUN_APP'
       ]);
       if(!allowedTypes.has(type)) return;
-      if(!isTrustedBoardOrigin(event.origin)){
-        console.warn('[WebAppBoard] 신뢰되지 않은 origin에서 온 브리지 메시지를 무시했습니다:', event.origin, type);
+
+      // Apps Script iframe마다 발급한 임시 nonce가 일치해야만 메시지를 신뢰합니다.
+      // Apps Script HTML Service가 Google의 중간 iframe을 사용해 event.origin이 달라져도
+      // nonce와 WindowProxy를 함께 검증하므로 안정적으로 연결할 수 있습니다.
+      if(!bridgeNonce || String(data.bridgeNonce || '') !== bridgeNonce) return;
+
+      const googleOrigin = isTrustedBoardOrigin(event.origin) || event.origin === 'null';
+      if(!googleOrigin){
+        console.warn('[WebAppBoard] 예상하지 못한 origin:', event.origin, type);
         return;
       }
 
-      // READY 또는 REQUEST_LOGIN이 먼저 도착하면 실제 Apps Script 내부 HTML의 WindowProxy를 기억합니다.
       if(type === 'STUDENT_BOARD_READY' || (!bridgeReady && type === 'STUDENT_BOARD_REQUEST_LOGIN')){
-        const wasReady = bridgeReady && event.source === boardBridgeWindow && event.origin === boardOrigin;
+        const wasReady = bridgeReady && event.source === boardBridgeWindow;
 
         boardBridgeWindow = event.source;
-        boardOrigin = event.origin;
-        bridgeReady = Boolean(boardBridgeWindow && boardOrigin);
+        boardOrigin = event.origin || 'null';
+        bridgeReady = Boolean(boardBridgeWindow);
 
         if(bridgeReady){
           bridgeReloadAttempts = 0;
@@ -142,19 +149,17 @@
         }
 
         if(bridgeReady && !wasReady){
-          console.info('[WebAppBoard] 인증 브리지 연결:', boardOrigin);
+          console.info('[WebAppBoard] 인증 브리지 연결:', boardOrigin, BRIDGE_VERSION);
           sendStoredTokenToBoard();
         }
 
-        // Apps Script가 보낸 최초 READY에만 ACK를 보냅니다.
-        // acknowledged READY에 다시 ACK를 보내면 메시지가 무한 반복될 수 있으므로 막습니다.
         if(bridgeReady && type === 'STUDENT_BOARD_READY' && !data.acknowledged){
           sendToBoard({type:'STUDENT_BOARD_PARENT_HELLO'});
         }
       }
 
-      // 브리지가 확정된 이후에는 같은 window/origin에서 온 메시지만 신뢰합니다.
-      if(!bridgeReady || event.source !== boardBridgeWindow || event.origin !== boardOrigin) return;
+      // READY 이후에는 최초에 기억한 WindowProxy에서 온 동일 nonce 메시지만 처리합니다.
+      if(!bridgeReady || event.source !== boardBridgeWindow) return;
 
       if(type === 'STUDENT_BOARD_REQUEST_LOGIN'){
         openLoginModal();
@@ -202,16 +207,30 @@
       }
     }
 
+    function createBridgeNonce(){
+      try{
+        const bytes = new Uint8Array(24);
+        crypto.getRandomValues(bytes);
+        return Array.from(bytes, b => b.toString(16).padStart(2,'0')).join('');
+      }catch(e){
+        return `${Date.now()}_${Math.random().toString(36).slice(2)}_${Math.random().toString(36).slice(2)}`.replace(/[^A-Za-z0-9_-]/g,'');
+      }
+    }
+
     function buildBoardUrl(forceFresh=false){
-      if(!forceFresh) return APPS_SCRIPT_WEB_APP_URL;
       const joiner = APPS_SCRIPT_WEB_APP_URL.includes('?') ? '&' : '?';
-      return `${APPS_SCRIPT_WEB_APP_URL}${joiner}bridge=${encodeURIComponent(BRIDGE_VERSION)}-${Date.now()}`;
+      const params = new URLSearchParams();
+      params.set('bridgeNonce', bridgeNonce);
+      params.set('bridge', BRIDGE_VERSION);
+      if(forceFresh) params.set('fresh', String(Date.now()));
+      return `${APPS_SCRIPT_WEB_APP_URL}${joiner}${params.toString()}`;
     }
 
     function loadBoardFrame(forceFresh=false){
       bridgeReady = false;
       boardBridgeWindow = null;
       boardOrigin = '';
+      bridgeNonce = createBridgeNonce();
       boardFrame.src = buildBoardUrl(forceFresh);
     }
 
@@ -222,7 +241,8 @@
         if(boardFrame.contentWindow){
           boardFrame.contentWindow.postMessage({
             type:'STUDENT_BOARD_PARENT_HELLO',
-            bridgeVersion:BRIDGE_VERSION
+            bridgeVersion:BRIDGE_VERSION,
+            bridgeNonce
           }, '*');
         }
       }catch(e){}
@@ -232,8 +252,9 @@
         if(boardBridgeWindow && boardOrigin){
           boardBridgeWindow.postMessage({
             type:'STUDENT_BOARD_PARENT_HELLO',
-            bridgeVersion:BRIDGE_VERSION
-          }, boardOrigin);
+            bridgeVersion:BRIDGE_VERSION,
+            bridgeNonce
+          }, boardOrigin === 'null' ? '*' : boardOrigin);
         }
       }catch(e){}
     }
@@ -289,8 +310,9 @@
     }
 
     function sendToBoard(message){
-      if(!bridgeReady || !boardBridgeWindow || !boardOrigin) return false;
-      boardBridgeWindow.postMessage(message, boardOrigin);
+      if(!bridgeReady || !boardBridgeWindow || !bridgeNonce) return false;
+      const payload = { ...message, bridgeNonce };
+      boardBridgeWindow.postMessage(payload, boardOrigin === 'null' ? '*' : boardOrigin);
       return true;
     }
 
