@@ -14,7 +14,7 @@
     body.runner-mode{grid-template-rows:1fr}
     body.runner-mode .shellbar{display:none}
     .shellbar{min-height:58px;display:flex;align-items:center;gap:10px;padding:10px 14px;background:#fff;border-bottom:1px solid var(--line);box-shadow:0 2px 8px rgba(15,23,42,.04);z-index:5}
-    .title{font-weight:900;white-space:nowrap}.subtitle{font-size:12px;color:var(--muted);margin-left:6px;white-space:nowrap}.spacer{flex:1}.uploadTop{border:0;border-radius:10px;padding:9px 13px;background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;font-size:13px;font-weight:900;white-space:nowrap;box-shadow:0 6px 14px rgba(79,70,229,.18)}.uploadTop:hover{filter:brightness(.97)}
+    .title{font-weight:900}.subtitle{font-size:12px;color:var(--muted);margin-left:6px}.spacer{flex:1}
     .user{display:none;align-items:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:5px 7px 5px 10px;background:#fff;max-width:320px}.user.show{display:flex}.userText{min-width:0}.userText strong,.userText span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.userText strong{font-size:12px}.userText span{font-size:10px;color:var(--muted)}
     .logout{border:0;background:#eef2ff;color:#3730a3;border-radius:999px;padding:7px 9px;font-weight:800}
     #topGoogleButton{display:flex;align-items:center;min-height:40px}
@@ -22,7 +22,7 @@
     #boardFrame{position:absolute;inset:0;width:100%;height:100%;border:0;background:#f6f8fc;display:block}
     .modalBack{position:fixed;inset:0;background:rgba(15,23,42,.48);display:none;align-items:center;justify-content:center;padding:18px;z-index:50}.modalBack.open{display:flex}.modal{width:min(460px,100%);background:#fff;border-radius:18px;box-shadow:0 24px 80px rgba(15,23,42,.25);overflow:hidden}.modalHead{display:flex;align-items:center;padding:18px 20px;border-bottom:1px solid var(--line)}.modalHead h2{margin:0;font-size:18px}.close{margin-left:auto;border:0;background:transparent;font-size:20px;cursor:pointer}.modalBody{padding:22px;display:grid;gap:16px}.modalBody p{margin:0;color:var(--muted);line-height:1.7}.googleSlot{display:flex;justify-content:center;min-height:44px}.notice{font-size:12px;color:#475569;background:#f8fafc;border:1px solid var(--line);padding:11px 12px;border-radius:10px;line-height:1.6}
     .toast{position:fixed;left:50%;bottom:22px;transform:translate(-50%,18px);background:#111827;color:#fff;padding:10px 14px;border-radius:10px;opacity:0;transition:.2s;z-index:70;pointer-events:none}.toast.show{opacity:1;transform:translate(-50%,0)}.toast.error{background:#991b1b}
-    @media(max-width:760px){.subtitle{display:none}.title{font-size:14px}.userText span{display:none}.shellbar{padding:8px}.user{max-width:180px}.uploadTop{padding:8px 10px;font-size:12px}}
+    @media(max-width:650px){.subtitle{display:none}.title{font-size:14px}.userText span{display:none}.shellbar{padding:8px}.user{max-width:180px}}
   </style>
 </head>
 <body>
@@ -30,7 +30,6 @@
     <div class="title">⚡ VibeRun</div>
     <div class="subtitle">만들고 · 공유하고 · 바로 실행하다</div>
     <div class="spacer"></div>
-    <button class="uploadTop" id="openUploadTop" type="button">＋ 앱 등록</button>
     <div id="topGoogleButton"></div>
     <div class="user" id="userBox">
       <div class="userText"><strong id="userName">Google 사용자</strong><span id="userEmail"></span></div>
@@ -98,7 +97,6 @@
 
     document.getElementById('closeLogin').addEventListener('click', closeLoginModal);
     document.getElementById('logoutBtn').addEventListener('click', logoutBoard);
-    document.getElementById('openUploadTop').addEventListener('click', requestOpenUpload);
     loginModal.addEventListener('click', e => { if(e.target === loginModal) closeLoginModal(); });
 
     boardFrame.addEventListener('load', () => {
@@ -209,12 +207,6 @@
       if(!bridgeReady || !boardBridgeWindow || !boardOrigin) return false;
       boardBridgeWindow.postMessage({bridgeNonce, ...message}, boardOrigin);
       return true;
-    }
-
-    function requestOpenUpload(){
-      if(sendToBoard({type:'STUDENT_BOARD_OPEN_UPLOAD'})) return;
-      showToast('게시판 연결 중입니다. 잠시 후 다시 눌러 주세요.', true);
-      setTimeout(() => sendToBoard({type:'STUDENT_BOARD_OPEN_UPLOAD'}), 500);
     }
 
     function openAppInBoardFrame(appId){
