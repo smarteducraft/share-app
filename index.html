@@ -13,8 +13,8 @@
     body{display:grid;grid-template-rows:auto 1fr;overflow:hidden}
     body.runner-mode{grid-template-rows:1fr}
     body.runner-mode .shellbar{display:none}
-    .shellbar{min-height:58px;display:flex;align-items:center;gap:10px;padding:10px 14px;background:#fff;border-bottom:1px solid var(--line);box-shadow:0 2px 8px rgba(15,23,42,.04);z-index:5}
-    .title{font-weight:900;white-space:nowrap}.subtitle{font-size:12px;color:var(--muted);margin-left:6px;white-space:nowrap}.spacer{flex:1}.uploadTop{border:0;border-radius:10px;padding:9px 13px;background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;font-size:13px;font-weight:900;white-space:nowrap;box-shadow:0 6px 14px rgba(79,70,229,.18)}.uploadTop:hover{filter:brightness(.97)}
+    .shellbar{height:54px;min-height:54px;display:flex;align-items:center;gap:10px;padding:7px 14px;background:#fff;border-bottom:1px solid var(--line);box-shadow:0 2px 8px rgba(15,23,42,.04);z-index:5}
+    .title{font-weight:900;white-space:nowrap}.subtitle{font-size:12px;color:var(--muted);margin-left:6px;white-space:nowrap}.spacer{flex:1}.uploadTop{border:0;border-radius:9px;padding:8px 12px;background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;font-size:12px;font-weight:900;white-space:nowrap;box-shadow:0 5px 12px rgba(79,70,229,.16)}.uploadTop:hover{filter:brightness(.97)}
     .user{display:none;align-items:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:5px 7px 5px 10px;background:#fff;max-width:320px}.user.show{display:flex}.userText{min-width:0}.userText strong,.userText span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.userText strong{font-size:12px}.userText span{font-size:10px;color:var(--muted)}
     .logout{border:0;background:#eef2ff;color:#3730a3;border-radius:999px;padding:7px 9px;font-weight:800}
     #topGoogleButton{display:flex;align-items:center;min-height:40px}
@@ -92,6 +92,7 @@
     let boardBridgeWindow = null;
     let bridgeReady = false;
     let verifiedUser = null;
+    let pendingUploadAfterLogin = false;
 
     // Apps Script 내부 HTML이 window.top(이 GitHub 페이지)으로 직접 보내는 메시지를 먼저 받습니다.
     window.addEventListener('message', handleBoardMessage);
@@ -176,6 +177,14 @@
         renderUser();
         closeLoginModal();
         showToast('Google 로그인이 완료되었습니다.');
+        if(pendingUploadAfterLogin){
+          pendingUploadAfterLogin = false;
+          setTimeout(() => {
+            if(!sendToBoard({type:'STUDENT_BOARD_OPEN_UPLOAD'})){
+              showToast('게시판 연결 중입니다. 잠시 후 앱 등록을 다시 눌러 주세요.', true);
+            }
+          }, 120);
+        }
         return;
       }
 
@@ -212,9 +221,20 @@
     }
 
     function requestOpenUpload(){
+      if(!verifiedUser){
+        pendingUploadAfterLogin = true;
+        openLoginModal();
+        showToast('앱을 등록하려면 먼저 Google 로그인해 주세요.');
+        return;
+      }
+
       if(sendToBoard({type:'STUDENT_BOARD_OPEN_UPLOAD'})) return;
       showToast('게시판 연결 중입니다. 잠시 후 다시 눌러 주세요.', true);
-      setTimeout(() => sendToBoard({type:'STUDENT_BOARD_OPEN_UPLOAD'}), 500);
+      setTimeout(() => {
+        if(!sendToBoard({type:'STUDENT_BOARD_OPEN_UPLOAD'})){
+          showToast('게시판 연결을 확인한 뒤 앱 등록을 다시 눌러 주세요.', true);
+        }
+      }, 500);
     }
 
     function openAppInBoardFrame(appId){
@@ -316,6 +336,7 @@
     function closeLoginModal(){ loginModal.classList.remove('open'); }
 
     function logoutBoard(){
+      pendingUploadAfterLogin = false;
       clearStoredToken();
       verifiedUser = null;
       renderUser();
