@@ -1,9 +1,10 @@
+
 <!doctype html>
 <html lang="ko">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>VibeRun</title>
+  <title>VibeRun | Web App Playground</title>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <style>
     :root{--line:#e2e8f0;--text:#14213d;--muted:#64748b;--brand:#4f46e5}
@@ -13,7 +14,7 @@
     body.runner-mode{grid-template-rows:1fr}
     body.runner-mode .shellbar{display:none}
     .shellbar{min-height:58px;display:flex;align-items:center;gap:10px;padding:10px 14px;background:#fff;border-bottom:1px solid var(--line);box-shadow:0 2px 8px rgba(15,23,42,.04);z-index:5}
-    .title{display:flex;align-items:center;gap:8px;font-weight:900;white-space:nowrap}.title-mark{font-size:18px}.subtitle{font-size:12px;color:var(--muted);margin-left:6px;white-space:nowrap}.spacer{flex:1}.register-btn{border:0;border-radius:11px;padding:10px 15px;background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;font-weight:900;box-shadow:0 6px 16px rgba(79,70,229,.20);white-space:nowrap;cursor:pointer}.register-btn:hover{filter:brightness(.98)}
+    .title{font-weight:900;white-space:nowrap}.subtitle{font-size:12px;color:var(--muted);margin-left:6px;white-space:nowrap}.spacer{flex:1}.uploadTop{border:0;border-radius:10px;padding:9px 13px;background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;font-size:13px;font-weight:900;white-space:nowrap;box-shadow:0 6px 14px rgba(79,70,229,.18)}.uploadTop:hover{filter:brightness(.97)}
     .user{display:none;align-items:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:5px 7px 5px 10px;background:#fff;max-width:320px}.user.show{display:flex}.userText{min-width:0}.userText strong,.userText span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.userText strong{font-size:12px}.userText span{font-size:10px;color:var(--muted)}
     .logout{border:0;background:#eef2ff;color:#3730a3;border-radius:999px;padding:7px 9px;font-weight:800}
     #topGoogleButton{display:flex;align-items:center;min-height:40px}
@@ -21,15 +22,15 @@
     #boardFrame{position:absolute;inset:0;width:100%;height:100%;border:0;background:#f6f8fc;display:block}
     .modalBack{position:fixed;inset:0;background:rgba(15,23,42,.48);display:none;align-items:center;justify-content:center;padding:18px;z-index:50}.modalBack.open{display:flex}.modal{width:min(460px,100%);background:#fff;border-radius:18px;box-shadow:0 24px 80px rgba(15,23,42,.25);overflow:hidden}.modalHead{display:flex;align-items:center;padding:18px 20px;border-bottom:1px solid var(--line)}.modalHead h2{margin:0;font-size:18px}.close{margin-left:auto;border:0;background:transparent;font-size:20px;cursor:pointer}.modalBody{padding:22px;display:grid;gap:16px}.modalBody p{margin:0;color:var(--muted);line-height:1.7}.googleSlot{display:flex;justify-content:center;min-height:44px}.notice{font-size:12px;color:#475569;background:#f8fafc;border:1px solid var(--line);padding:11px 12px;border-radius:10px;line-height:1.6}
     .toast{position:fixed;left:50%;bottom:22px;transform:translate(-50%,18px);background:#111827;color:#fff;padding:10px 14px;border-radius:10px;opacity:0;transition:.2s;z-index:70;pointer-events:none}.toast.show{opacity:1;transform:translate(-50%,0)}.toast.error{background:#991b1b}
-    @media(max-width:760px){.subtitle{display:none}.title{font-size:14px}.userText span{display:none}.shellbar{padding:8px}.user{max-width:170px}.register-btn{padding:9px 11px;font-size:12px}}
+    @media(max-width:760px){.subtitle{display:none}.title{font-size:14px}.userText span{display:none}.shellbar{padding:8px}.user{max-width:180px}.uploadTop{padding:8px 10px;font-size:12px}}
   </style>
 </head>
 <body>
   <div class="shellbar">
-    <div class="title"><span class="title-mark">⚡</span><span>VibeRun</span></div>
+    <div class="title">⚡ VibeRun</div>
     <div class="subtitle">만들고 · 공유하고 · 바로 실행하다</div>
     <div class="spacer"></div>
-    <button class="register-btn" id="topRegisterBtn" type="button">＋ 앱 등록</button>
+    <button class="uploadTop" id="openUploadTop" type="button">＋ 앱 등록</button>
     <div id="topGoogleButton"></div>
     <div class="user" id="userBox">
       <div class="userText"><strong id="userName">Google 사용자</strong><span id="userEmail"></span></div>
@@ -38,14 +39,14 @@
   </div>
 
   <div class="boardViewport">
-    <iframe id="boardFrame" title="VibeRun 웹앱 공유 게시판" referrerpolicy="no-referrer"></iframe>
+    <iframe id="boardFrame" title="VibeRun 웹앱 실행 게시판" referrerpolicy="no-referrer"></iframe>
   </div>
 
   <div class="modalBack" id="loginModal">
     <div class="modal">
       <div class="modalHead"><h2>Google 로그인 후 작성</h2><button class="close" id="closeLogin">✕</button></div>
       <div class="modalBody">
-        <p>게시판은 누구나 볼 수 있지만 웹앱을 올리려면 Google 로그인이 필요합니다.</p>
+        <p>게시판 열람과 앱 실행은 누구나 가능하며, 앱 등록·수정·삭제에는 Google 로그인이 필요합니다.</p>
         <div class="googleSlot" id="modalGoogleButton"></div>
         <div class="notice">로그인 계정의 고유 식별자와 이메일은 게시물 작성자 확인을 위해 관리자용 DB에만 저장되고 게시판에는 공개되지 않습니다.</div>
       </div>
@@ -62,6 +63,15 @@
     const APPS_SCRIPT_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzEXmaSxS74Zfcx9wbb2MGI8CSkS_TNBxWN1KAYeIBw0L4y1k2xM5t_ygZDqsQNnRsy/exec';
     const PUBLIC_BOARD_URL = 'https://smarteducraft.github.io/share-app/';
     const CANONICAL_PATH = '/share-app/';
+    const bridgeNonce = (() => {
+      try {
+        const bytes = new Uint8Array(18);
+        crypto.getRandomValues(bytes);
+        return Array.from(bytes, b => b.toString(16).padStart(2,'0')).join('');
+      } catch(e) {
+        return String(Date.now()) + Math.random().toString(36).slice(2);
+      }
+    })();
 
     // 주소창은 항상 GitHub Pages의 대표 주소로 유지합니다.
     if(location.pathname !== CANONICAL_PATH || location.search || location.hash){
@@ -76,7 +86,6 @@
     const topGoogleButton = document.getElementById('topGoogleButton');
     const modalGoogleButton = document.getElementById('modalGoogleButton');
     const toast = document.getElementById('toast');
-    const topRegisterBtn = document.getElementById('topRegisterBtn');
 
     let googleInitialized = false;
     let boardOrigin = '';
@@ -89,7 +98,7 @@
 
     document.getElementById('closeLogin').addEventListener('click', closeLoginModal);
     document.getElementById('logoutBtn').addEventListener('click', logoutBoard);
-    topRegisterBtn.addEventListener('click', requestAppRegistration);
+    document.getElementById('openUploadTop').addEventListener('click', requestOpenUpload);
     loginModal.addEventListener('click', e => { if(e.target === loginModal) closeLoginModal(); });
 
     boardFrame.addEventListener('load', () => {
@@ -104,11 +113,17 @@
 
     // GitHub wrapper 안의 iframe은 잘라내지 않습니다.
     // 기존 42px 강제 크롭이 Apps Script 본문 상단까지 가려 화면이 잘리는 원인이었습니다.
-    boardFrame.src = APPS_SCRIPT_WEB_APP_URL;
+    boardFrame.src = buildBoardUrl();
     initGoogleWhenReady();
+
+    function buildBoardUrl(){
+      const joiner = APPS_SCRIPT_WEB_APP_URL.includes('?') ? '&' : '?';
+      return `${APPS_SCRIPT_WEB_APP_URL}${joiner}bridgeNonce=${encodeURIComponent(bridgeNonce)}`;
+    }
 
     function handleBoardMessage(event){
       const data = event.data || {};
+      if(String(data.bridgeNonce || '') !== bridgeNonce) return;
       const type = String(data.type || '');
 
       const allowedTypes = new Set([
@@ -192,8 +207,14 @@
 
     function sendToBoard(message){
       if(!bridgeReady || !boardBridgeWindow || !boardOrigin) return false;
-      boardBridgeWindow.postMessage(message, boardOrigin);
+      boardBridgeWindow.postMessage({bridgeNonce, ...message}, boardOrigin);
       return true;
+    }
+
+    function requestOpenUpload(){
+      if(sendToBoard({type:'STUDENT_BOARD_OPEN_UPLOAD'})) return;
+      showToast('게시판 연결 중입니다. 잠시 후 다시 눌러 주세요.', true);
+      setTimeout(() => sendToBoard({type:'STUDENT_BOARD_OPEN_UPLOAD'}), 500);
     }
 
     function openAppInBoardFrame(appId){
@@ -208,25 +229,6 @@
       // 앱 실행 중에는 GitHub 상단 바도 숨겨 실행 영역을 브라우저 전체 높이로 확보합니다.
       document.body.classList.add('runner-mode');
       boardFrame.src = runnerUrl;
-    }
-
-    function requestAppRegistration(attempt=0){
-      // 상단의 "앱 등록" 버튼이 Apps Script 게시판의 등록 모달을 열도록 요청합니다.
-      if(bridgeReady){
-        sendToBoard({type:'STUDENT_BOARD_OPEN_UPLOAD'});
-        return;
-      }
-
-      if(attempt === 0){
-        showToast('게시판 연결을 확인하고 있습니다.');
-      }
-
-      if(attempt >= 30){
-        showToast('게시판 연결이 준비되지 않았습니다. 잠시 후 다시 시도해 주세요.', true);
-        return;
-      }
-
-      setTimeout(() => requestAppRegistration(attempt + 1), 200);
     }
 
     function initGoogleWhenReady(attempt=0){
@@ -333,7 +335,9 @@
       if(verifiedUser){
         topGoogleButton.style.display = 'none';
         userBox.classList.add('show');
-        document.getElementById('userName').textContent = verifiedUser.name || 'Google 사용자';
+        document.getElementById('userName').textContent = verifiedUser.isAdmin
+          ? `${verifiedUser.name || 'Google 사용자'} · 관리자`
+          : (verifiedUser.name || 'Google 사용자');
         document.getElementById('userEmail').textContent = verifiedUser.email || '';
       }else{
         userBox.classList.remove('show');
