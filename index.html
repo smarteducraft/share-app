@@ -380,12 +380,12 @@
       ↗ 새 창
     </a>
 
-    <a
+    <button
       class="runBtn"
-      href="https://smarteducraft.github.io/share-app/"
-      rel="noopener">
-      ← VibeRun
-    </a>
+      id="runCloseBtn"
+      type="button">
+      ✕ 종료
+    </button>
   </div>
 
   <!-- 게시판/실행 화면 공통 iframe -->
@@ -541,6 +541,9 @@
       document.getElementById('runReloadBtn')
         .addEventListener('click', reloadRunApp);
 
+      document.getElementById('runCloseBtn')
+        .addEventListener('click', closeRunWindow);
+
       loadRunApp();
     }
 
@@ -565,6 +568,26 @@
     function reloadRunApp(){
       boardFrame.src = 'about:blank';
       setTimeout(loadRunApp, 40);
+    }
+
+    function closeRunWindow(){
+      /*
+       * 앱 실행 화면은 게시판의 window.open()으로 열린 창/탭이므로
+       * 일반적으로 window.close()로 닫을 수 있습니다.
+       */
+      window.close();
+
+      /*
+       * 일부 브라우저 정책으로 닫히지 않을 경우 안내합니다.
+       */
+      setTimeout(() => {
+        if(!window.closed){
+          showToast(
+            '브라우저가 자동 창 닫기를 허용하지 않았습니다. 이 탭을 직접 닫아 주세요.',
+            true
+          );
+        }
+      }, 250);
     }
 
     /* =========================================================
