@@ -4,6 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>VibeRun | Web App Playground</title>
+
+  <!-- 초기 DNS/TLS 연결을 미리 준비하여 GitHub → Google/Apps Script 첫 로딩 지연을 줄입니다. -->
+  <link rel="preconnect" href="https://accounts.google.com">
+  <link rel="preconnect" href="https://script.google.com">
+  <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
+  <link rel="dns-prefetch" href="//accounts.google.com">
+  <link rel="dns-prefetch" href="//script.google.com">
+  <link rel="dns-prefetch" href="//script.googleusercontent.com">
+
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 
   <style>
