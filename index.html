@@ -150,29 +150,32 @@
       if(!allowedTypes.has(type)) return;
       if(!isTrustedBoardOrigin(event.origin)) return;
 
-      // READY 또는 REQUEST_LOGIN이 먼저 도착하면 실제 Apps Script 내부 HTML의 WindowProxy를 기억합니다.
-      if(type === 'STUDENT_BOARD_READY' || (!bridgeReady && type === 'STUDENT_BOARD_REQUEST_LOGIN')){
-        const wasReady = bridgeReady && event.source === boardBridgeWindow && event.origin === boardOrigin;
-
+      // Apps Script HTML Service는 script.google.com → script.googleusercontent.com 등
+      // 서로 다른 Google origin의 중간 프레임을 사용할 수 있습니다.
+      // 따라서 최초 READY의 origin 하나에 고정하지 않고,
+      // '허용된 Google origin + bridgeNonce'를 통과한 메시지의 실제 송신 창을 최신 상태로 기억합니다.
+      const wasReady = bridgeReady && event.source === boardBridgeWindow && event.origin === boardOrigin;
+      if(event.source){
         boardBridgeWindow = event.source;
         boardOrigin = event.origin;
-        bridgeReady = Boolean(boardBridgeWindow && boardOrigin);
-
-        if(bridgeReady && !wasReady){
-          console.info('[WebAppBoard] 인증 브리지 연결:', boardOrigin);
-          sendStoredTokenToBoard();
-        }
-
-        // Apps Script가 보낸 최초 READY에만 ACK를 보냅니다.
-        // acknowledged READY에 다시 ACK를 보내면 메시지가 무한 반복될 수 있으므로 막습니다.
-        if(bridgeReady && type === 'STUDENT_BOARD_READY' && !data.acknowledged){
-          sendToBoard({type:'STUDENT_BOARD_PARENT_HELLO'});
-        }
+        bridgeReady = true;
       }
 
-      // Google Apps Script HTML Service는 중간 iframe을 추가할 수 있으므로
-      // WindowProxy 동일성 비교는 하지 않습니다. origin + bridgeNonce 검증으로 제한합니다.
-      if(!bridgeReady || event.origin !== boardOrigin) return;
+      if(bridgeReady && !wasReady && type === 'STUDENT_BOARD_READY'){
+        console.info('[VibeRun] 인증 브리지 연결:', boardOrigin);
+        sendStoredTokenToBoard();
+      }
+
+      // Apps Script가 보낸 최초 READY에만 ACK를 보냅니다.
+      // acknowledged READY에 다시 ACK를 보내면 메시지가 무한 반복될 수 있으므로 막습니다.
+      if(type === 'STUDENT_BOARD_READY' && !data.acknowledged){
+        sendToBoard({type:'STUDENT_BOARD_PARENT_HELLO'});
+      }
+
+      // 중요: 여기서 event.origin === boardOrigin 비교를 하지 않습니다.
+      // 로그인 검증 결과가 다른 Google Apps Script origin에서 돌아오는 경우
+      // 정상 인증이 되었는데도 상단 로그인 표시가 갱신되지 않는 문제가 발생하기 때문입니다.
+      if(!bridgeReady) return;
 
       if(type === 'STUDENT_BOARD_REQUEST_LOGIN'){
         openLoginModal();
@@ -186,7 +189,9 @@
       }
 
       if(type === 'STUDENT_BOARD_AUTH_VERIFIED'){
-        verifiedUser = data.user || null;
+        verifiedUser = data.user
+          ? { ...data.user, isAdmin:Boolean(data.isAdmin || data.user.isAdmin) }
+          : null;
         renderUser();
         closeLoginModal();
         showToast('Google 로그인이 완료되었습니다.');
