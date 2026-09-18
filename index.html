@@ -5,49 +5,419 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>VibeRun | Web App Playground</title>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
+
   <style>
-    :root{--line:#e2e8f0;--text:#14213d;--muted:#64748b;--brand:#4f46e5}
+    :root{
+      --line:#e2e8f0;
+      --text:#14213d;
+      --muted:#64748b;
+      --brand:#4f46e5;
+
+      /*
+       * 실행 모드에서 Google Apps Script가 iframe 상단에 붙이는
+       * "이 애플리케이션은 Google Apps Script 사용자가 만들었습니다."
+       * 안내 영역을 잘라내기 위한 값입니다.
+       *
+       * 안내 문구가 조금 보이면 44~48px로 늘리고,
+       * 실제 앱 위쪽이 잘리면 36~40px로 줄이세요.
+       */
+      --gas-notice-height:42px;
+      --run-bar-height:52px;
+    }
+
     *{box-sizing:border-box}
-    html,body{width:100%;height:100%;margin:0;font-family:Inter,Pretendard,'Noto Sans KR',Arial,sans-serif;background:#f6f8fc;color:var(--text)}
-    body{display:grid;grid-template-rows:auto 1fr;overflow:hidden}
-    body.runner-mode{grid-template-rows:1fr}
-    body.runner-mode .shellbar{display:none}
-    .shellbar{height:54px;min-height:54px;display:flex;align-items:center;gap:10px;padding:7px 14px;background:#fff;border-bottom:1px solid var(--line);box-shadow:0 2px 8px rgba(15,23,42,.04);z-index:5}
-    .title{font-weight:900;white-space:nowrap}.subtitle{font-size:12px;color:var(--muted);margin-left:6px;white-space:nowrap}.spacer{flex:1}.uploadTop{border:0;border-radius:9px;padding:8px 12px;background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;font-size:12px;font-weight:900;white-space:nowrap;box-shadow:0 5px 12px rgba(79,70,229,.16)}.uploadTop:hover{filter:brightness(.97)}
-    .user{display:none;align-items:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:5px 7px 5px 10px;background:#fff;max-width:320px}.user.show{display:flex}.userText{min-width:0}.userText strong,.userText span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.userText strong{font-size:12px}.userText span{font-size:10px;color:var(--muted)}
-    .logout{border:0;background:#eef2ff;color:#3730a3;border-radius:999px;padding:7px 9px;font-weight:800}
-    #topGoogleButton{display:flex;align-items:center;min-height:40px}
-    .boardViewport{position:relative;min-height:0;overflow:hidden;background:#f6f8fc}
-    #boardFrame{position:absolute;inset:0;width:100%;height:100%;border:0;background:#f6f8fc;display:block}
-    .modalBack{position:fixed;inset:0;background:rgba(15,23,42,.48);display:none;align-items:center;justify-content:center;padding:18px;z-index:50}.modalBack.open{display:flex}.modal{width:min(460px,100%);background:#fff;border-radius:18px;box-shadow:0 24px 80px rgba(15,23,42,.25);overflow:hidden}.modalHead{display:flex;align-items:center;padding:18px 20px;border-bottom:1px solid var(--line)}.modalHead h2{margin:0;font-size:18px}.close{margin-left:auto;border:0;background:transparent;font-size:20px;cursor:pointer}.modalBody{padding:22px;display:grid;gap:16px}.modalBody p{margin:0;color:var(--muted);line-height:1.7}.googleSlot{display:flex;justify-content:center;min-height:44px}.notice{font-size:12px;color:#475569;background:#f8fafc;border:1px solid var(--line);padding:11px 12px;border-radius:10px;line-height:1.6}
-    .toast{position:fixed;left:50%;bottom:22px;transform:translate(-50%,18px);background:#111827;color:#fff;padding:10px 14px;border-radius:10px;opacity:0;transition:.2s;z-index:70;pointer-events:none}.toast.show{opacity:1;transform:translate(-50%,0)}.toast.error{background:#991b1b}
-    @media(max-width:760px){.subtitle{display:none}.title{font-size:14px}.userText span{display:none}.shellbar{padding:8px}.user{max-width:180px}.uploadTop{padding:8px 10px;font-size:12px}}
+
+    html,body{
+      width:100%;
+      height:100%;
+      margin:0;
+      font-family:Inter,Pretendard,'Noto Sans KR',Arial,sans-serif;
+      background:#f6f8fc;
+      color:var(--text);
+    }
+
+    body{
+      display:grid;
+      grid-template-rows:auto minmax(0,1fr);
+      overflow:hidden;
+    }
+
+    /* =========================
+       게시판 상단바
+       ========================= */
+    .shellbar{
+      height:54px;
+      min-height:54px;
+      display:flex;
+      align-items:center;
+      gap:10px;
+      padding:7px 14px;
+      background:#fff;
+      border-bottom:1px solid var(--line);
+      box-shadow:0 2px 8px rgba(15,23,42,.04);
+      z-index:20;
+    }
+
+    .title{font-weight:900;white-space:nowrap}
+    .subtitle{
+      font-size:12px;
+      color:var(--muted);
+      margin-left:6px;
+      white-space:nowrap;
+    }
+    .spacer{flex:1}
+
+    .uploadTop{
+      border:0;
+      border-radius:9px;
+      padding:8px 12px;
+      background:linear-gradient(135deg,#4f46e5,#7c3aed);
+      color:#fff;
+      font-size:12px;
+      font-weight:900;
+      white-space:nowrap;
+      box-shadow:0 5px 12px rgba(79,70,229,.16);
+    }
+    .uploadTop:hover{filter:brightness(.97)}
+
+    .user{
+      display:none;
+      align-items:center;
+      gap:8px;
+      border:1px solid var(--line);
+      border-radius:999px;
+      padding:5px 7px 5px 10px;
+      background:#fff;
+      max-width:320px;
+    }
+    .user.show{display:flex}
+
+    .userText{min-width:0}
+    .userText strong,.userText span{
+      display:block;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .userText strong{font-size:12px}
+    .userText span{font-size:10px;color:var(--muted)}
+
+    .logout{
+      border:0;
+      background:#eef2ff;
+      color:#3730a3;
+      border-radius:999px;
+      padding:7px 9px;
+      font-weight:800;
+    }
+
+    #topGoogleButton{
+      display:flex;
+      align-items:center;
+      min-height:40px;
+    }
+
+    /* =========================
+       실행 모드 상단바
+       ========================= */
+    .runbar{
+      display:none;
+      height:var(--run-bar-height);
+      min-height:var(--run-bar-height);
+      align-items:center;
+      gap:12px;
+      padding:8px 14px;
+      background:#111827;
+      color:#fff;
+      border-bottom:1px solid rgba(255,255,255,.08);
+      box-shadow:0 3px 10px rgba(15,23,42,.24);
+      z-index:30;
+    }
+
+    .runTitle{
+      min-width:0;
+      flex:1;
+    }
+
+    .runTitle strong{
+      display:block;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      font-size:14px;
+    }
+
+    .runTitle span{
+      display:block;
+      color:#94a3b8;
+      font-size:11px;
+      margin-top:2px;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    .runBadge{
+      flex:0 0 auto;
+      padding:6px 9px;
+      border:1px solid #1d4ed8;
+      border-radius:999px;
+      background:#1e3a8a;
+      color:#bfdbfe;
+      font-size:11px;
+      white-space:nowrap;
+    }
+
+    .runBtn{
+      flex:0 0 auto;
+      border:1px solid #334155;
+      border-radius:9px;
+      background:#1e293b;
+      color:#fff;
+      padding:8px 10px;
+      font:inherit;
+      font-size:12px;
+      font-weight:700;
+      text-decoration:none;
+      white-space:nowrap;
+      cursor:pointer;
+    }
+    .runBtn:hover{background:#334155}
+
+    /* =========================
+       공통 iframe 영역
+       ========================= */
+    .boardViewport{
+      position:relative;
+      min-height:0;
+      overflow:hidden;
+      background:#f6f8fc;
+    }
+
+    #boardFrame{
+      position:absolute;
+      left:0;
+      top:0;
+      width:100%;
+      height:100%;
+      border:0;
+      background:#f6f8fc;
+      display:block;
+    }
+
+    /*
+     * 실행 모드:
+     * GitHub index.html이 VibeRun 상단바를 제공하고,
+     * 그 아래 Apps Script runner를 iframe으로 불러옵니다.
+     *
+     * Apps Script 안내 영역만 viewport 위쪽으로 밀어내어 숨깁니다.
+     */
+    body.run-mode{
+      grid-template-rows:var(--run-bar-height) minmax(0,1fr);
+      background:#0f172a;
+    }
+
+    body.run-mode .shellbar{display:none}
+    body.run-mode .runbar{display:flex}
+    body.run-mode .boardViewport{background:#fff}
+
+    body.run-mode #boardFrame{
+      top:calc(-1 * var(--gas-notice-height));
+      height:calc(100% + var(--gas-notice-height));
+      background:#fff;
+    }
+
+    /* =========================
+       로그인 모달 / 토스트
+       ========================= */
+    .modalBack{
+      position:fixed;
+      inset:0;
+      background:rgba(15,23,42,.48);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      padding:18px;
+      z-index:50;
+    }
+    .modalBack.open{display:flex}
+
+    .modal{
+      width:min(460px,100%);
+      background:#fff;
+      border-radius:18px;
+      box-shadow:0 24px 80px rgba(15,23,42,.25);
+      overflow:hidden;
+    }
+
+    .modalHead{
+      display:flex;
+      align-items:center;
+      padding:18px 20px;
+      border-bottom:1px solid var(--line);
+    }
+    .modalHead h2{margin:0;font-size:18px}
+    .close{
+      margin-left:auto;
+      border:0;
+      background:transparent;
+      font-size:20px;
+      cursor:pointer;
+    }
+
+    .modalBody{
+      padding:22px;
+      display:grid;
+      gap:16px;
+    }
+    .modalBody p{
+      margin:0;
+      color:var(--muted);
+      line-height:1.7;
+    }
+
+    .googleSlot{
+      display:flex;
+      justify-content:center;
+      min-height:44px;
+    }
+
+    .notice{
+      font-size:12px;
+      color:#475569;
+      background:#f8fafc;
+      border:1px solid var(--line);
+      padding:11px 12px;
+      border-radius:10px;
+      line-height:1.6;
+    }
+
+    .toast{
+      position:fixed;
+      left:50%;
+      bottom:22px;
+      transform:translate(-50%,18px);
+      background:#111827;
+      color:#fff;
+      padding:10px 14px;
+      border-radius:10px;
+      opacity:0;
+      transition:.2s;
+      z-index:70;
+      pointer-events:none;
+      max-width:min(620px,90vw);
+      text-align:center;
+    }
+    .toast.show{
+      opacity:1;
+      transform:translate(-50%,0);
+    }
+    .toast.error{background:#991b1b}
+
+    @media(max-width:760px){
+      .subtitle{display:none}
+      .title{font-size:14px}
+      .userText span{display:none}
+      .shellbar{padding:8px}
+      .user{max-width:180px}
+      .uploadTop{padding:8px 10px;font-size:12px}
+
+      :root{--run-bar-height:48px}
+      .runbar{gap:7px;padding:7px 8px}
+      .runBadge{display:none}
+      .runBtn{padding:7px 8px;font-size:11px}
+      .runTitle span{display:none}
+    }
   </style>
 </head>
+
 <body>
+  <!-- =========================
+       일반 게시판 모드 상단바
+       ========================= -->
   <div class="shellbar">
     <div class="title">⚡ VibeRun</div>
     <div class="subtitle">만들고 · 공유하고 · 바로 실행하다</div>
     <div class="spacer"></div>
-    <button class="uploadTop" id="openUploadTop" type="button">＋ 앱 등록</button>
+
+    <button class="uploadTop" id="openUploadTop" type="button">
+      ＋ 앱 등록
+    </button>
+
     <div id="topGoogleButton"></div>
+
     <div class="user" id="userBox">
-      <div class="userText"><strong id="userName">Google 사용자</strong><span id="userEmail"></span></div>
+      <div class="userText">
+        <strong id="userName">Google 사용자</strong>
+        <span id="userEmail"></span>
+      </div>
       <button class="logout" id="logoutBtn">로그아웃</button>
     </div>
   </div>
 
-  <div class="boardViewport">
-    <iframe id="boardFrame" title="VibeRun 웹앱 실행 게시판" referrerpolicy="no-referrer"></iframe>
+  <!-- =========================
+       새 창 앱 실행 모드 상단바
+       ========================= -->
+  <div class="runbar">
+    <div class="runTitle">
+      <strong id="runTitle">VibeRun 웹앱</strong>
+      <span id="runAuthor">VibeRun Web App Playground</span>
+    </div>
+
+    <span class="runBadge" id="runModeBadge">🔒 격리 실행</span>
+
+    <button class="runBtn" id="runReloadBtn" type="button">
+      ↻ 다시 실행
+    </button>
+
+    <a
+      class="runBtn"
+      id="runExternalOpen"
+      href="#"
+      target="_blank"
+      rel="noopener"
+      hidden>
+      ↗ 새 창
+    </a>
+
+    <a
+      class="runBtn"
+      href="https://smarteducraft.github.io/share-app/"
+      rel="noopener">
+      ← VibeRun
+    </a>
   </div>
 
+  <!-- 게시판/실행 화면 공통 iframe -->
+  <div class="boardViewport">
+    <iframe
+      id="boardFrame"
+      title="VibeRun 웹앱 실행 게시판"
+      referrerpolicy="no-referrer"
+      allow="fullscreen; clipboard-read; clipboard-write">
+    </iframe>
+  </div>
+
+  <!-- 로그인 모달: 게시판 모드에서만 사용 -->
   <div class="modalBack" id="loginModal">
     <div class="modal">
-      <div class="modalHead"><h2>Google 로그인 후 작성</h2><button class="close" id="closeLogin">✕</button></div>
+      <div class="modalHead">
+        <h2>Google 로그인 후 작성</h2>
+        <button class="close" id="closeLogin">✕</button>
+      </div>
+
       <div class="modalBody">
-        <p>게시판 열람과 앱 실행은 누구나 가능하며, 앱 등록·수정·삭제에는 Google 로그인이 필요합니다.</p>
+        <p>
+          게시판 열람과 앱 실행은 누구나 가능하며,
+          앱 등록·수정·삭제에는 Google 로그인이 필요합니다.
+        </p>
+
         <div class="googleSlot" id="modalGoogleButton"></div>
-        <div class="notice">로그인 계정의 고유 식별자와 이메일은 게시물 작성자 확인을 위해 관리자용 DB에만 저장되고 게시판에는 공개되지 않습니다.</div>
+
+        <div class="notice">
+          로그인 계정의 고유 식별자와 이메일은 게시물 작성자 확인을 위해
+          관리자용 DB에만 저장되고 게시판에는 공개되지 않습니다.
+        </div>
       </div>
     </div>
   </div>
@@ -56,36 +426,73 @@
 
   <script>
     /* =========================================================
-       ★ 아래 값은 현재 프로젝트 기준값입니다.
-       Apps Script 새 배포로 /exec 주소가 바뀌면 APPS_SCRIPT_WEB_APP_URL만 수정하세요.
+       현재 프로젝트 기준 설정
+       Apps Script 새 배포로 /exec 주소가 바뀌면
+       APPS_SCRIPT_WEB_APP_URL만 수정하세요.
        ========================================================= */
-    const GOOGLE_CLIENT_ID = '1071416155552-3odg2uqlv547elnbp93s3fc8tkqc4l9q.apps.googleusercontent.com';
-    const APPS_SCRIPT_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwrwX3MxebpWJkDhI3K-lfME-01ZWwF6wr1y9RKZmhzGNk4nOqx3tfo6tvJEuTtZOeA/exec';
-    const PUBLIC_BOARD_URL = 'https://smarteducraft.github.io/share-app/';
+    const GOOGLE_CLIENT_ID =
+      '1071416155552-3odg2uqlv547elnbp93s3fc8tkqc4l9q.apps.googleusercontent.com';
+
+    const APPS_SCRIPT_WEB_APP_URL =
+      'https://script.google.com/macros/s/AKfycbwrwX3MxebpWJkDhI3K-lfME-01ZWwF6wr1y9RKZmhzGNk4nOqx3tfo6tvJEuTtZOeA/exec';
+
+    const PUBLIC_BOARD_URL =
+      'https://smarteducraft.github.io/share-app/';
+
     const CANONICAL_PATH = '/share-app/';
 
-    const bridgeNonce = (() => {
-      try {
-        const bytes = new Uint8Array(18);
-        crypto.getRandomValues(bytes);
-        return Array.from(bytes, b => b.toString(16).padStart(2,'0')).join('');
-      } catch(e) {
-        return String(Date.now()) + Math.random().toString(36).slice(2);
-      }
-    })();
+    /* =========================================================
+       모드 판별
+       /share-app/                     → 게시판
+       /share-app/?mode=run&id=APP_ID → 새 창 실행
+       ========================================================= */
+    const initialParams = new URLSearchParams(location.search);
 
-    if(location.pathname !== CANONICAL_PATH || location.search || location.hash){
-      history.replaceState(null, document.title, CANONICAL_PATH);
-    }
+    const IS_RUN_MODE =
+      String(initialParams.get('mode') || '').toLowerCase() === 'run';
 
-    const TOKEN_KEY = 'webappBoardGoogleIdToken';
-    const LEGACY_TOKEN_KEY = 'studentWebappBoardGoogleIdToken';
+    const RUN_APP_ID =
+      String(initialParams.get('id') || '').trim();
+
+    const RUN_TITLE =
+      String(initialParams.get('title') || 'VibeRun 웹앱');
+
+    const RUN_AUTHOR =
+      String(initialParams.get('author') || '');
+
+    const RUN_SOURCE_TYPE =
+      String(initialParams.get('sourceType') || 'FILE').toUpperCase() === 'URL'
+        ? 'URL'
+        : 'FILE';
+
+    const RUN_APP_URL =
+      String(initialParams.get('appUrl') || '').trim();
+
     const boardFrame = document.getElementById('boardFrame');
     const loginModal = document.getElementById('loginModal');
     const userBox = document.getElementById('userBox');
     const topGoogleButton = document.getElementById('topGoogleButton');
     const modalGoogleButton = document.getElementById('modalGoogleButton');
     const toast = document.getElementById('toast');
+
+    /*
+     * bridgeNonce는 게시판 모드 인증 브리지에 사용합니다.
+     */
+    const bridgeNonce = (() => {
+      try{
+        const bytes = new Uint8Array(18);
+        crypto.getRandomValues(bytes);
+        return Array.from(
+          bytes,
+          b => b.toString(16).padStart(2,'0')
+        ).join('');
+      }catch(e){
+        return String(Date.now()) + Math.random().toString(36).slice(2);
+      }
+    })();
+
+    const TOKEN_KEY = 'webappBoardGoogleIdToken';
+    const LEGACY_TOKEN_KEY = 'studentWebappBoardGoogleIdToken';
 
     let googleInitialized = false;
     let boardOrigin = '';
@@ -95,34 +502,135 @@
     let pendingUploadAfterLogin = false;
     let authRetryTimers = [];
 
-    window.addEventListener('message', handleBoardMessage);
+    /* =========================================================
+       시작
+       ========================================================= */
+    if(IS_RUN_MODE){
+      initRunMode();
+    }else{
+      initBoardMode();
+    }
 
-    document.getElementById('closeLogin').addEventListener('click', closeLoginModal);
-    document.getElementById('logoutBtn').addEventListener('click', logoutBoard);
-    document.getElementById('openUploadTop').addEventListener('click', requestOpenUpload);
-    loginModal.addEventListener('click', e => { if(e.target === loginModal) closeLoginModal(); });
+    /* =========================================================
+       실행 모드
+       ========================================================= */
+    function initRunMode(){
+      document.body.classList.add('run-mode');
 
-    boardFrame.addEventListener('load', () => {
-      setTimeout(() => {
-        if(!bridgeReady){
-          console.warn('[WebAppBoard] Apps Script 인증 브리지 READY를 아직 받지 못했습니다.');
+      const titleEl = document.getElementById('runTitle');
+      const authorEl = document.getElementById('runAuthor');
+      const badgeEl = document.getElementById('runModeBadge');
+      const externalOpen = document.getElementById('runExternalOpen');
+
+      titleEl.textContent = RUN_TITLE;
+      document.title = `${RUN_TITLE} | VibeRun`;
+
+      authorEl.textContent = RUN_AUTHOR
+        ? `제작: ${RUN_AUTHOR}`
+        : 'VibeRun Web App Playground';
+
+      if(RUN_SOURCE_TYPE === 'URL'){
+        badgeEl.textContent = '🔗 배포 링크';
+
+        if(/^https:\/\/\S+$/i.test(RUN_APP_URL)){
+          externalOpen.href = RUN_APP_URL;
+          externalOpen.hidden = false;
         }
-      }, 3000);
-    });
+      }
 
-    boardFrame.src = buildBoardUrl();
-    initGoogleWhenReady();
+      document.getElementById('runReloadBtn')
+        .addEventListener('click', reloadRunApp);
+
+      loadRunApp();
+    }
+
+    function buildRunFrameUrl(){
+      const joiner =
+        APPS_SCRIPT_WEB_APP_URL.includes('?') ? '&' : '?';
+
+      return `${APPS_SCRIPT_WEB_APP_URL}${joiner}` +
+        `mode=run&id=${encodeURIComponent(RUN_APP_ID)}` +
+        `&vr=${Date.now()}`;
+    }
+
+    function loadRunApp(){
+      if(!RUN_APP_ID){
+        showToast('앱 ID가 없습니다. 게시판으로 돌아가 다시 실행해 주세요.', true);
+        return;
+      }
+
+      boardFrame.src = buildRunFrameUrl();
+    }
+
+    function reloadRunApp(){
+      boardFrame.src = 'about:blank';
+      setTimeout(loadRunApp, 40);
+    }
+
+    /* =========================================================
+       일반 게시판 모드
+       ========================================================= */
+    function initBoardMode(){
+      /*
+       * 게시판 모드에서는 주소를 대표 주소 하나로 유지합니다.
+       * 실행 모드의 query string은 위에서 먼저 판별했으므로 여기서만 제거합니다.
+       */
+      if(
+        location.pathname !== CANONICAL_PATH ||
+        location.search ||
+        location.hash
+      ){
+        history.replaceState(
+          null,
+          document.title,
+          CANONICAL_PATH
+        );
+      }
+
+      window.addEventListener('message', handleBoardMessage);
+
+      document.getElementById('closeLogin')
+        .addEventListener('click', closeLoginModal);
+
+      document.getElementById('logoutBtn')
+        .addEventListener('click', logoutBoard);
+
+      document.getElementById('openUploadTop')
+        .addEventListener('click', requestOpenUpload);
+
+      loginModal.addEventListener('click', e => {
+        if(e.target === loginModal) closeLoginModal();
+      });
+
+      boardFrame.addEventListener('load', () => {
+        setTimeout(() => {
+          if(!bridgeReady){
+            console.warn(
+              '[WebAppBoard] Apps Script 인증 브리지 READY를 아직 받지 못했습니다.'
+            );
+          }
+        }, 3000);
+      });
+
+      boardFrame.src = buildBoardUrl();
+      initGoogleWhenReady();
+    }
 
     function buildBoardUrl(){
-      const joiner = APPS_SCRIPT_WEB_APP_URL.includes('?') ? '&' : '?';
-      return `${APPS_SCRIPT_WEB_APP_URL}${joiner}bridgeNonce=${encodeURIComponent(bridgeNonce)}`;
+      const joiner =
+        APPS_SCRIPT_WEB_APP_URL.includes('?') ? '&' : '?';
+
+      return `${APPS_SCRIPT_WEB_APP_URL}${joiner}` +
+        `bridgeNonce=${encodeURIComponent(bridgeNonce)}`;
     }
 
     function handleBoardMessage(event){
       const data = event.data || {};
+
       if(String(data.bridgeNonce || '') !== bridgeNonce) return;
 
       const type = String(data.type || '');
+
       const allowedTypes = new Set([
         'STUDENT_BOARD_READY',
         'STUDENT_BOARD_REQUEST_LOGIN',
@@ -135,8 +643,13 @@
       if(!allowedTypes.has(type)) return;
       if(!isTrustedBoardOrigin(event.origin)) return;
 
-      // READY/REQUEST_LOGIN이 오면 실제 Apps Script 내부 WindowProxy를 기억합니다.
-      if(type === 'STUDENT_BOARD_READY' || (!bridgeReady && type === 'STUDENT_BOARD_REQUEST_LOGIN')){
+      /*
+       * READY/REQUEST_LOGIN이 오면 실제 Apps Script 내부 WindowProxy를 기억합니다.
+       */
+      if(
+        type === 'STUDENT_BOARD_READY' ||
+        (!bridgeReady && type === 'STUDENT_BOARD_REQUEST_LOGIN')
+      ){
         const wasReady = bridgeReady;
 
         boardBridgeWindow = event.source;
@@ -144,19 +657,31 @@
         bridgeReady = Boolean(boardBridgeWindow && boardOrigin);
 
         if(bridgeReady && !wasReady){
-          console.info('[WebAppBoard] 인증 브리지 연결:', boardOrigin);
+          console.info(
+            '[WebAppBoard] 인증 브리지 연결:',
+            boardOrigin
+          );
+
           sendStoredTokenToBoard();
         }
 
-        if(bridgeReady && type === 'STUDENT_BOARD_READY' && !data.acknowledged){
-          sendToBoard({type:'STUDENT_BOARD_PARENT_HELLO'});
+        if(
+          bridgeReady &&
+          type === 'STUDENT_BOARD_READY' &&
+          !data.acknowledged
+        ){
+          sendToBoard({
+            type:'STUDENT_BOARD_PARENT_HELLO'
+          });
         }
       }
 
-      // ★ 핵심 수정:
-      // Apps Script HTML Service는 중간 iframe 구조에 따라 message event.source/origin이
-      // READY 때와 달라질 수 있습니다. 강한 bridgeNonce + 신뢰 origin 검사는 이미 끝났으므로
-      // 여기서는 event.source === boardBridgeWindow 같은 엄격 비교로 정상 메시지를 버리지 않습니다.
+      /*
+       * Apps Script HTML Service는 중간 iframe 구조에 따라
+       * message event.source/origin이 READY 때와 달라질 수 있습니다.
+       * bridgeNonce + 신뢰 origin 검사를 통과했으므로
+       * 여기서는 event.source 일치 여부를 추가로 강제하지 않습니다.
+       */
       if(!bridgeReady) return;
 
       if(type === 'STUDENT_BOARD_REQUEST_LOGIN'){
@@ -164,41 +689,80 @@
         return;
       }
 
+      /*
+       * 이전 Apps Script index.html과의 호환용입니다.
+       * 최신 버전은 자체적으로 GitHub 실행 주소를 새 창에서 열기 때문에
+       * 정상적으로는 이 메시지를 거의 사용하지 않습니다.
+       */
       if(type === 'STUDENT_BOARD_RUN_APP'){
         const appId = String(data.appId || '').trim();
-        if(appId) openAppInBoardFrame(appId);
+
+        if(appId){
+          const runUrl =
+            `${PUBLIC_BOARD_URL}?mode=run&id=${encodeURIComponent(appId)}`;
+
+          window.open(runUrl, '_blank', 'noopener');
+        }
         return;
       }
 
       if(type === 'STUDENT_BOARD_AUTH_VERIFIED'){
         clearAuthRetryTimers();
+
         verifiedUser = data.user || null;
+
+        /*
+         * Code.gs가 top-level isAdmin도 보내는 경우를 대비해
+         * user 객체에 관리자 정보를 보강합니다.
+         */
+        if(verifiedUser && typeof data.isAdmin !== 'undefined'){
+          verifiedUser.isAdmin = Boolean(data.isAdmin);
+        }
+
         renderUser();
         closeLoginModal();
         showToast('Google 로그인이 완료되었습니다.');
 
         if(pendingUploadAfterLogin){
           pendingUploadAfterLogin = false;
+
           setTimeout(() => {
-            if(!sendToBoard({type:'STUDENT_BOARD_OPEN_UPLOAD'})){
-              showToast('게시판 연결 중입니다. 잠시 후 앱 등록을 다시 눌러 주세요.', true);
+            if(!sendToBoard({
+              type:'STUDENT_BOARD_OPEN_UPLOAD'
+            })){
+              showToast(
+                '게시판 연결 중입니다. 잠시 후 앱 등록을 다시 눌러 주세요.',
+                true
+              );
             }
           }, 120);
         }
+
         return;
       }
 
-      if(type === 'STUDENT_BOARD_AUTH_INVALID' || type === 'STUDENT_BOARD_AUTH_EXPIRED'){
+      if(
+        type === 'STUDENT_BOARD_AUTH_INVALID' ||
+        type === 'STUDENT_BOARD_AUTH_EXPIRED'
+      ){
         clearAuthRetryTimers();
         clearStoredToken();
+
         verifiedUser = null;
         renderUser();
 
         if(type === 'STUDENT_BOARD_AUTH_EXPIRED'){
-          showToast('로그인 시간이 만료되었습니다. 다시 로그인해 주세요.', true);
+          showToast(
+            '로그인 시간이 만료되었습니다. 다시 로그인해 주세요.',
+            true
+          );
+
           openLoginModal();
         }else{
-          showToast('Google 로그인 확인에 실패했습니다. Apps Script 설정과 배포 상태를 확인해 주세요.', true);
+          showToast(
+            'Google 로그인 확인에 실패했습니다. Apps Script 설정과 배포 상태를 확인해 주세요.',
+            true
+          );
         }
       }
     }
@@ -206,8 +770,11 @@
     function isTrustedBoardOrigin(origin){
       try{
         const url = new URL(origin);
+
         if(url.protocol !== 'https:') return false;
+
         const host = url.hostname.toLowerCase();
+
         return host === 'script.google.com' ||
                host === 'script.googleusercontent.com' ||
                host.endsWith('.googleusercontent.com');
@@ -217,12 +784,30 @@
     }
 
     function sendToBoard(message){
-      if(!bridgeReady || !boardBridgeWindow || !boardOrigin) return false;
+      if(
+        !bridgeReady ||
+        !boardBridgeWindow ||
+        !boardOrigin
+      ){
+        return false;
+      }
+
       try{
-        boardBridgeWindow.postMessage({bridgeNonce, ...message}, boardOrigin);
+        boardBridgeWindow.postMessage(
+          {
+            bridgeNonce,
+            ...message
+          },
+          boardOrigin
+        );
+
         return true;
       }catch(e){
-        console.warn('[WebAppBoard] 게시판 메시지 전송 실패:', e);
+        console.warn(
+          '[WebAppBoard] 게시판 메시지 전송 실패:',
+          e
+        );
+
         return false;
       }
     }
@@ -231,50 +816,74 @@
       if(!verifiedUser){
         pendingUploadAfterLogin = true;
         openLoginModal();
-        showToast('앱을 등록하려면 먼저 Google 로그인해 주세요.');
+
+        showToast(
+          '앱을 등록하려면 먼저 Google 로그인해 주세요.'
+        );
+
         return;
       }
 
-      if(sendToBoard({type:'STUDENT_BOARD_OPEN_UPLOAD'})) return;
+      if(sendToBoard({
+        type:'STUDENT_BOARD_OPEN_UPLOAD'
+      })){
+        return;
+      }
 
-      showToast('게시판 연결 중입니다. 잠시 후 다시 시도합니다.', true);
+      showToast(
+        '게시판 연결 중입니다. 잠시 후 다시 시도합니다.',
+        true
+      );
+
       setTimeout(() => {
-        if(!sendToBoard({type:'STUDENT_BOARD_OPEN_UPLOAD'})){
-          showToast('게시판 연결을 확인한 뒤 앱 등록을 다시 눌러 주세요.', true);
+        if(!sendToBoard({
+          type:'STUDENT_BOARD_OPEN_UPLOAD'
+        })){
+          showToast(
+            '게시판 연결을 확인한 뒤 앱 등록을 다시 눌러 주세요.',
+            true
+          );
         }
       }, 500);
-    }
-
-    function openAppInBoardFrame(appId){
-      const runnerUrl = `${APPS_SCRIPT_WEB_APP_URL}?mode=run&id=${encodeURIComponent(appId)}`;
-
-      clearAuthRetryTimers();
-      bridgeReady = false;
-      boardBridgeWindow = null;
-      boardOrigin = '';
-
-      document.body.classList.add('runner-mode');
-      boardFrame.src = runnerUrl;
     }
 
     function initGoogleWhenReady(attempt=0){
       if(googleInitialized) return;
 
-      if(!(window.google && google.accounts && google.accounts.id)){
-        if(attempt < 100) setTimeout(() => initGoogleWhenReady(attempt + 1), 100);
+      if(
+        !(
+          window.google &&
+          google.accounts &&
+          google.accounts.id
+        )
+      ){
+        if(attempt < 100){
+          setTimeout(
+            () => initGoogleWhenReady(attempt + 1),
+            100
+          );
+        }
+
         return;
       }
 
-      if(!GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID.includes('여기에_')){
-        showToast('GitHub index.html에 Google Client ID를 입력해 주세요.', true);
+      if(
+        !GOOGLE_CLIENT_ID ||
+        GOOGLE_CLIENT_ID.includes('여기에_')
+      ){
+        showToast(
+          'GitHub index.html에 Google Client ID를 입력해 주세요.',
+          true
+        );
+
         return;
       }
 
       google.accounts.id.initialize({
-        client_id: GOOGLE_CLIENT_ID,
-        callback: handleGoogleCredential,
-        ux_mode: 'popup',
-        auto_select: false
+        client_id:GOOGLE_CLIENT_ID,
+        callback:handleGoogleCredential,
+        ux_mode:'popup',
+        auto_select:false
       });
 
       googleInitialized = true;
@@ -287,20 +896,44 @@
       topGoogleButton.innerHTML = '';
       modalGoogleButton.innerHTML = '';
 
-      google.accounts.id.renderButton(topGoogleButton, {
-        type:'standard', theme:'outline', size:'medium', text:'signin_with', shape:'pill', logo_alignment:'left'
-      });
+      google.accounts.id.renderButton(
+        topGoogleButton,
+        {
+          type:'standard',
+          theme:'outline',
+          size:'medium',
+          text:'signin_with',
+          shape:'pill',
+          logo_alignment:'left'
+        }
+      );
 
-      google.accounts.id.renderButton(modalGoogleButton, {
-        type:'standard', theme:'outline', size:'large', text:'continue_with', shape:'rectangular', logo_alignment:'left', width:300
-      });
+      google.accounts.id.renderButton(
+        modalGoogleButton,
+        {
+          type:'standard',
+          theme:'outline',
+          size:'large',
+          text:'continue_with',
+          shape:'rectangular',
+          logo_alignment:'left',
+          width:300
+        }
+      );
     }
 
     function handleGoogleCredential(response){
-      const token = response && response.credential ? response.credential : '';
+      const token =
+        response && response.credential
+          ? response.credential
+          : '';
 
       if(!token){
-        showToast('Google 계정 인증은 열렸지만 ID 토큰을 받지 못했습니다.', true);
+        showToast(
+          'Google 계정 인증은 열렸지만 ID 토큰을 받지 못했습니다.',
+          true
+        );
+
         return;
       }
 
@@ -309,40 +942,66 @@
         sessionStorage.removeItem(LEGACY_TOKEN_KEY);
       }catch(e){}
 
-      showToast('Google 계정 인증 성공 · 게시판에서 로그인 확인 중입니다.');
+      showToast(
+        'Google 계정 인증 성공 · 게시판에서 로그인 확인 중입니다.'
+      );
 
-      // ★ 핵심 수정:
-      // 로그인 순간 브리지가 아직 준비되지 않아도 실패로 끝내지 않습니다.
-      // 여러 번 재전송하고, 나중에 READY가 오면 sendStoredTokenToBoard()가 다시 전송합니다.
+      /*
+       * 로그인 순간 브리지가 아직 준비되지 않아도 실패로 끝내지 않고
+       * 여러 번 재전송합니다.
+       */
       scheduleTokenVerification(token);
     }
 
     function scheduleTokenVerification(token){
       clearAuthRetryTimers();
 
-      const delays = [0, 200, 600, 1200, 2500, 4500];
-      authRetryTimers = delays.map(delay => setTimeout(() => {
-        if(verifiedUser) return;
-        sendTokenToBoard(token);
-      }, delay));
+      const delays = [
+        0,
+        200,
+        600,
+        1200,
+        2500,
+        4500
+      ];
 
-      // 마지막에도 검증이 안 되었으면 사용자에게 상태를 알려 줍니다.
-      authRetryTimers.push(setTimeout(() => {
-        if(!verifiedUser){
-          console.warn('[WebAppBoard] 로그인 검증 응답 대기 중. READY가 늦게 오면 저장된 토큰을 다시 전송합니다.');
-          showToast('Google 인증은 완료되었습니다. 게시판 연결을 확인 중입니다.', false);
-        }
-      }, 6500));
+      authRetryTimers = delays.map(delay =>
+        setTimeout(() => {
+          if(verifiedUser) return;
+          sendTokenToBoard(token);
+        }, delay)
+      );
+
+      authRetryTimers.push(
+        setTimeout(() => {
+          if(!verifiedUser){
+            console.warn(
+              '[WebAppBoard] 로그인 검증 응답 대기 중. READY가 늦게 오면 저장된 토큰을 다시 전송합니다.'
+            );
+
+            showToast(
+              'Google 인증은 완료되었습니다. 게시판 연결을 확인 중입니다.'
+            );
+          }
+        }, 6500)
+      );
     }
 
     function clearAuthRetryTimers(){
-      authRetryTimers.forEach(id => clearTimeout(id));
+      authRetryTimers.forEach(
+        id => clearTimeout(id)
+      );
+
       authRetryTimers = [];
     }
 
     function getStoredToken(){
       try{
-        return sessionStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(LEGACY_TOKEN_KEY) || '';
+        return (
+          sessionStorage.getItem(TOKEN_KEY) ||
+          sessionStorage.getItem(LEGACY_TOKEN_KEY) ||
+          ''
+        );
       }catch(e){
         return '';
       }
@@ -350,7 +1009,10 @@
 
     function sendStoredTokenToBoard(){
       const token = getStoredToken();
-      if(token) sendTokenToBoard(token);
+
+      if(token){
+        sendTokenToBoard(token);
+      }
     }
 
     function sendTokenToBoard(token){
@@ -364,7 +1026,10 @@
 
     function openLoginModal(){
       loginModal.classList.add('open');
-      if(googleInitialized) setTimeout(renderGoogleButtons, 0);
+
+      if(googleInitialized){
+        setTimeout(renderGoogleButtons, 0);
+      }
     }
 
     function closeLoginModal(){
@@ -375,16 +1040,24 @@
       pendingUploadAfterLogin = false;
       clearAuthRetryTimers();
       clearStoredToken();
+
       verifiedUser = null;
       renderUser();
 
       try{
-        if(window.google && google.accounts && google.accounts.id){
+        if(
+          window.google &&
+          google.accounts &&
+          google.accounts.id
+        ){
           google.accounts.id.disableAutoSelect();
         }
       }catch(e){}
 
-      sendToBoard({type:'STUDENT_BOARD_AUTH_LOGOUT'});
+      sendToBoard({
+        type:'STUDENT_BOARD_AUTH_LOGOUT'
+      });
+
       showToast('게시판에서 로그아웃했습니다.');
     }
 
@@ -399,23 +1072,37 @@
       if(verifiedUser){
         topGoogleButton.style.display = 'none';
         userBox.classList.add('show');
-        document.getElementById('userName').textContent = verifiedUser.isAdmin
-          ? `${verifiedUser.name || 'Google 사용자'} · 관리자`
-          : (verifiedUser.name || 'Google 사용자');
-        document.getElementById('userEmail').textContent = verifiedUser.email || '';
+
+        document.getElementById('userName').textContent =
+          verifiedUser.isAdmin
+            ? `${verifiedUser.name || 'Google 사용자'} · 관리자`
+            : (verifiedUser.name || 'Google 사용자');
+
+        document.getElementById('userEmail').textContent =
+          verifiedUser.email || '';
       }else{
         userBox.classList.remove('show');
         topGoogleButton.style.display = 'flex';
-        if(googleInitialized) setTimeout(renderGoogleButtons,0);
+
+        if(googleInitialized){
+          setTimeout(renderGoogleButtons,0);
+        }
       }
     }
 
     let toastTimer;
+
     function showToast(message,isError=false){
       clearTimeout(toastTimer);
+
       toast.textContent = message;
-      toast.className = `toast show${isError ? ' error' : ''}`;
-      toastTimer = setTimeout(() => toast.className='toast', 3200);
+      toast.className =
+        `toast show${isError ? ' error' : ''}`;
+
+      toastTimer = setTimeout(
+        () => toast.className = 'toast',
+        3200
+      );
     }
   </script>
 </body>
